@@ -73,10 +73,20 @@ def check_login(authenticator):
     if st.session_state.get("authentication_status") is not True:
         # CLEANUP: If not authenticated, ensure role/user state is cleared 
         # to prevent previous session leaking (e.g. Dad -> Logout -> Son Login -> Sees Dad's Admin View)
-        keys_to_clear = ["role", "target_child_name", "selected_child", "name", "username"]
+        # CLEANUP: If not authenticated, ensure role/user state is cleared 
+        # to prevent previous session leaking. 
+        # IMPORTANT: Do NOT delete 'name', 'username', 'authentication_status' keys, 
+        # as authenticator might access them. Set to None instead.
+        keys_to_clear = ["role", "target_child_name", "selected_child"]
         for k in keys_to_clear:
             if k in st.session_state:
                 del st.session_state[k]
+        
+        # Ensure authenticator keys exist and are None if not authenticated
+        auth_keys = ["name", "username", "authentication_status"]
+        for k in auth_keys:
+            if k not in st.session_state:
+                st.session_state[k] = None
 
         try:
             # authenticator.login returns (name, status, username) or None if just rendering
