@@ -9,15 +9,26 @@ def render_sidebar(authenticator=None):
     # 1. Inject Custom CSS (Bold Sidebar)
     st.markdown("""
     <style>
-    /* Make Sidebar Links Bold */
+    /* Make Sidebar Links Bold and Larger */
     section[data-testid="stSidebar"] a {
         font-weight: bold !important;
-        font-size: 1.05em !important;
+        font-size: 1.15em !important; /* Increased from 1.05em */
     }
     
     /* Bold all links logic override */
     [data-testid="stSidebarNav"] a {
         font-weight: bold !important;
+    }
+
+    /* Helper: Increase Sidebar Widget Labels (e.g. Child Selector) */
+    [data-testid="stSidebar"] label {
+        font-size: 1.1em !important;
+        font-weight: bold !important;
+    }
+    
+    /* Helper: Increase Sidebar Text (e.g. Welcome message) */
+    [data-testid="stSidebar"] p {
+        font-size: 1.05em !important;
     }
     </style>
     """, unsafe_allow_html=True)
