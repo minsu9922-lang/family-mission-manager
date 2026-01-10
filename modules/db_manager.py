@@ -337,6 +337,13 @@ class DataManager:
     # --- Praise Methods ---
     def get_praise_logs(self, user_id=None):
         df = self.get_data("Praise")
+        
+        # Ensure required columns exist to prevent KeyErrors
+        required_cols = ["status", "user_name", "content", "date", "praise_id"]
+        for col in required_cols:
+            if col not in df.columns:
+                df[col] = "대기 중" if col == "status" else ""
+                
         if user_id and not df.empty and "user_name" in df.columns:
             return df[df["user_name"] == user_id]
         return df
