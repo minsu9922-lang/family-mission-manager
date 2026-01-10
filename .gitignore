@@ -63,6 +63,7 @@ clean_duplicates.py
 # Temporary files
 *.txt
 !requirements.txt
+!runtime.txt
 
 # OS
 .DS_Store
