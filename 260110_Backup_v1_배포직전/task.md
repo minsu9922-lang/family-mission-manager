@@ -1,0 +1,24 @@
+# Tasks
+
+- [x] **Restart Streamlit Application**
+- [x] **Fix Streamlit Deprecations**
+  - [x] Replace `use_container_width` with `width` in dataframes/editors
+- [x] **Remove All Legacy Names**
+  - [x] Replace '첫째보물/둘째보물' with '큰보물/작은보물'
+  - [x] Replace 'bomul1/bomul2' with 'son1/son2'
+  - [x] Fix "My Wallet" blank screen
+- [x] **Secure Credentials and PII**
+  - [x] Enforce `secrets.toml` usage
+  - [x] Remove hardcoded PII
+  - [x] Fix 100 won calculation error
+- [x] **Refine Todays Mission UI and Logic**
+  - [x] **UI Simplification**: Remove 'Done' column from left list (read-only).
+  - [x] **History Management**: Move to bottom, add delete function.
+  - [x] **Tab 2 Overhaul**: Implement Form-based addition (Routine/OneTime).
+  - [x] **Fix Links & Duplicates**: Ensure Tab 2 definitions correctly generate Tab 1 missions without duplicates.
+  - [x] **Fix Crashes**: Resolve `StreamlitAPIException` (Type Safety).
+  - [x] **Verification**: End-to-end browser test confirmed fix.
+- [x] **Fix Persistent Login & Data**
+  - [x] **Login Logic Conflict**: Revert to Persistent Cookie (30 days) for "Refresh" stability.
+  - [x] **Settings Bug**: Fix `use_container_width` error & **Ensure Persistence**.
+  - [x] **Data Cleanup**: Remove "Ghost Missions" for son1.

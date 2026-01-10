@@ -1,0 +1,198 @@
+import streamlit as st
+import pandas as pd
+from modules.db_manager import db_manager
+
+import modules.auth_utils as auth_utils
+import modules.ui_components as ui_components
+
+st.set_page_config(page_title="설정 관리", page_icon="⚙️", layout="wide")
+
+# Initialize Authenticator
+authenticator = auth_utils.get_authenticator()
+
+# Check Login
+auth_status = auth_utils.check_login(authenticator)
+
+if auth_status:
+    ui_components.inject_mobile_css()
+    ui_components.render_sidebar(authenticator)
+else:
+    st.stop()
+    
+st.title("⚙️ 설정 (Settings)")
+
+# Determine Role (Safety Check)
+user_role = st.session_state.get("role")
+if not user_role and st.session_state.get("username") in ["dad", "mom"]:
+    user_role = "admin"
+
+# Fetch Data (Only needed for Admins usually, but let's fetch safely)
+df_settings = pd.DataFrame() # Default
+if user_role == "admin":
+    try:
+        df_settings = db_manager.get_settings()
+    except Exception as e:
+        st.error(f"설정을 불러오는 중 오류가 발생했습니다: {e}")
+
+    if df_settings.empty:
+        df_settings = pd.DataFrame(columns=["category", "item_name", "value", "unit", "target_child"])
+
+    # Ensure target_child column exists
+    if "target_child" not in df_settings.columns:
+        df_settings["target_child"] = "All"
+    # Normalize category
+    if "category" in df_settings.columns:
+        df_settings["category"] = df_settings["category"].astype(str).str.strip()
+
+
+# Define Tabs based on Role
+if user_role == "admin":
+    tabs = ["🏷️ 도장 관리", "🎟️ 쿠폰 관리", "⚙️ 기타 설정", "🔑 비밀번호 변경"]
+    tab1, tab2, tab3, tab4 = st.tabs(tabs)
+else:
+    tabs = ["🔑 비밀번호 변경"]
+    tab4, = st.tabs(tabs)
+    # Dummy tabs for variable safety if referenced (unlikely)
+    tab1 = tab2 = tab3 = None
+
+# --- ADMIN ONLY CONTENT ---
+if user_role == "admin":
+    # Helper: User Options
+    child_options = ["All"] + [u for u in auth_utils.get_auth_config()['credentials']['usernames'].keys() if u.startswith("son")]
+
+    # --- TAB 1: STAMPS ---
+    with tab1:
+        st.subheader("🏷️ 칭찬 도장 관리")
+        st.caption("자녀별 도장 종류와 금액을 설정합니다. `target_child`를 지정하면 해당 자녀에게만 보입니다.")
+        
+        df_stamp = df_settings[df_settings["category"] == "Stamp"].copy()
+        df_stamp_view = df_stamp.drop(columns=["category"], errors="ignore")
+        if "unit" in df_stamp_view.columns:
+            df_stamp_view["unit"] = df_stamp_view["unit"].astype(str)
+        
+        with st.form(key="form_stamp", clear_on_submit=False):
+            edited_stamp_view = st.data_editor(
+                df_stamp_view.reset_index(drop=True),
+                column_config={
+                    "item_name": st.column_config.TextColumn("도장 이름", required=False),
+                    "value": st.column_config.NumberColumn("금액 (원)", required=False, step=10),
+                    "unit": st.column_config.TextColumn("단위 (예: 개)"),
+                    "target_child": st.column_config.SelectboxColumn("대상 자녀 (All=모두)", options=child_options, required=False)
+                },
+                width="stretch", num_rows="dynamic", key="editor_stamp"
+            )
+            if st.form_submit_button("💾 도장 설정 저장", type="primary", width="stretch"):
+                import time
+                try:
+                    df_others = df_settings[df_settings["category"] != "Stamp"]
+                    edited_stamp = edited_stamp_view.copy()
+                    edited_stamp["category"] = "Stamp"
+                    if "target_child" not in edited_stamp.columns: edited_stamp["target_child"] = "All"
+                    edited_stamp["target_child"] = edited_stamp["target_child"].fillna("All")
+                    edited_stamp = edited_stamp[edited_stamp["item_name"].astype(str).str.strip().ne("")]
+                    final_df = pd.concat([df_others, edited_stamp], ignore_index=True)
+                    if db_manager.update_data("Settings", final_df):
+                        st.toast("✅ 도장 설정이 저장되었습니다!"); time.sleep(1.0); st.rerun()
+                    else: st.error("저장 실패 (DB Error)")
+                except Exception as e: st.error(f"오류: {e}")
+
+    # --- TAB 2: COUPONS ---
+    with tab2:
+        st.subheader("🎟️ 게임/보너스 쿠폰 관리")
+        st.caption("쿠폰 이름과 사용 시간(분)을 설정합니다.")
+        
+        df_coupon = df_settings[df_settings["category"] == "Coupon"].copy()
+        df_coupon_view = df_coupon.drop(columns=["category"], errors="ignore")
+        if "unit" in df_coupon_view.columns:
+             df_coupon_view["unit"] = df_coupon_view["unit"].astype(str)
+        
+        with st.form(key="form_coupon", clear_on_submit=False):
+            edited_coupon_view = st.data_editor(
+                df_coupon_view.reset_index(drop=True),
+                column_config={
+                    "item_name": st.column_config.TextColumn("쿠폰 이름", required=False),
+                    "value": st.column_config.NumberColumn("시간 (분)", required=False, step=10),
+                    "unit": st.column_config.TextColumn("단위 (예: 분)"),
+                    "target_child": st.column_config.SelectboxColumn("대상 자녀 (All=모두)", options=child_options, required=False)
+                },
+                width="stretch", num_rows="dynamic", key="editor_coupon"
+            )
+            if st.form_submit_button("💾 쿠폰 설정 저장", type="primary", width="stretch"):
+                import time
+                try:
+                    df_others = df_settings[df_settings["category"] != "Coupon"]
+                    edited_coupon = edited_coupon_view.copy()
+                    edited_coupon["category"] = "Coupon"
+                    if "target_child" not in edited_coupon.columns: edited_coupon["target_child"] = "All"
+                    edited_coupon["target_child"] = edited_coupon["target_child"].fillna("All")
+                    edited_coupon = edited_coupon[edited_coupon["item_name"].astype(str).str.strip().ne("")]
+                    final_df = pd.concat([df_others, edited_coupon], ignore_index=True)
+                    if db_manager.update_data("Settings", final_df):
+                        st.toast("✅ 쿠폰 설정이 저장되었습니다!"); time.sleep(1.0); st.rerun()
+                    else: st.error("저장 실패 (DB Error)")
+                except Exception as e: st.error(f"오류: {e}")
+
+    # --- TAB 3: GENERAL ---
+    with tab3:
+        st.subheader("⚙️ 기타 설정")
+        df_general = df_settings[~df_settings["category"].isin(["Stamp", "Coupon"])].copy()
+        
+        with st.form(key="form_general", clear_on_submit=False):
+            edited_general = st.data_editor(
+                df_general.reset_index(drop=True),
+                column_config={
+                     "category": st.column_config.SelectboxColumn("카테고리", options=["Reward", "General"], required=False),
+                     "item_name": st.column_config.TextColumn("항목명", required=False),
+                     "value": st.column_config.NumberColumn("값", required=False),
+                     "target_child": st.column_config.TextColumn("대상 (옵션)")
+                },
+                width="stretch", num_rows="dynamic", key="editor_general"
+            )
+            if st.form_submit_button("💾 기타 설정 저장", type="primary", width="stretch"):
+                import time
+                try:
+                    df_reserved = df_settings[df_settings["category"].isin(["Stamp", "Coupon"])]
+                    edited_general = edited_general[edited_general["item_name"].astype(str).str.strip() != ""]
+                    final_df = pd.concat([df_reserved, edited_general], ignore_index=True)
+                    if db_manager.update_data("Settings", final_df):
+                        st.toast("✅ 설정이 저장되었습니다!"); time.sleep(2.0); st.rerun()
+                    else: st.error("저장 실패 (DB Error)")
+                except Exception as e: st.error(f"오류: {e}")
+
+# --- TAB 4: PASSWORD CHANGE (Available to All) ---
+with tab4:
+    st.subheader("🔑 비밀번호 변경")
+    st.write("새로운 비밀번호를 입력해주세요.")
+    
+    # Target User Logic
+    # 1. Fetch all users from config for Admin
+    # 2. Restrict to current user for Non-Admin
+    
+    target_username = st.session_state["username"] # Default to self
+    
+    if user_role == "admin":
+        auth_conf = auth_utils.get_auth_config()
+        all_users = list(auth_conf['credentials']['usernames'].keys())
+        target_username = st.selectbox("변경할 사용자 선택 (관리자 권한)", all_users, index=all_users.index(target_username) if target_username in all_users else 0)
+    else:
+        st.info(f"사용자: **{target_username}**")
+        
+    with st.form("pwd_change_form"):
+        new_pwd = st.text_input("새 비밀번호", type="password")
+        confirm_pwd = st.text_input("새 비밀번호 확인", type="password")
+        
+        submitted_pwd = st.form_submit_button("비밀번호 변경", type="primary")
+        
+        if submitted_pwd:
+            if not new_pwd:
+                st.error("비밀번호를 입력해주세요.")
+            elif new_pwd != confirm_pwd:
+                st.error("비밀번호가 일치하지 않습니다.")
+            else:
+                success, msg = auth_utils.change_password(target_username, new_pwd)
+                if success:
+                    st.success(msg)
+                    st.info("⚠️ 변경된 비밀번호는 다음 로그인부터 적용됩니다.")
+                else:
+                    st.error(f"오류 발생: {msg}")
+

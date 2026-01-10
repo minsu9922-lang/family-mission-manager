@@ -1,0 +1,91 @@
+# Secrets - 가장 중요!
+.streamlit/secrets.toml
+*.toml
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+
+# Environment
+.env
+.venv
+env/
+venv/
+ENV/
+env.bak/
+venv.bak/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Data files
+data/*.csv
+*.csv
+debug_save_dump.csv
+
+# Debug and test scripts
+debug_*.py
+cleanup_*.py
+test_*.py
+verify_*.py
+inspect_*.py
+simple_hash.py
+rehash_passwords.py
+rename_pages.py
+run_sheet_update.py
+generate_sample_data.py
+populate_settings.py
+setup_sheets.py
+clean_duplicates.py
+
+# Temporary files
+*.txt
+!requirements.txt
+
+# OS
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+# Logs
+*.log
+
+# Google Sheets API Key (if stored as file)
+Google sheets_API Key/
+*.json
+!package.json
+
+# Documentation (임시)
+PRD.md
+TRD.md
+Tasks.md
+AI_WORK_GUIDELINES.md
+setup_guide.md
+250108_*.txt
+260108_*.txt
