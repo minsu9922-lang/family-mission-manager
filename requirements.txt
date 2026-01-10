@@ -1,7 +1,8 @@
-streamlit==1.40.1
-streamlit-authenticator==0.3.3
-pandas==2.2.3
-pyyaml==6.0.2
+streamlit
+streamlit-authenticator
+pandas
+pyyaml
 st-gsheets-connection
-gspread==6.1.4
+gspread
+google-auth
 google-auth==2.35.0
