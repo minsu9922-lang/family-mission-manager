@@ -12,7 +12,7 @@ def render_sidebar(authenticator=None):
     /* Make Sidebar Links Bold and Larger */
     section[data-testid="stSidebar"] a {
         font-weight: bold !important;
-        font-size: 1.15em !important; /* Increased from 1.05em */
+        font-size: 1.3em !important; /* Increased to 1.3em for better visibility */
     }
     
     /* Bold all links logic override */
