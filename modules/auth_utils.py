@@ -89,28 +89,16 @@ def change_password(username, new_password_plain):
     Updates the password in Google Sheets 'Users' table (DB-based).
     Changes are immediately reflected across all devices.
     """
-    import traceback
     try:
-        st.write(f"[DEBUG] Starting password change for: {username}")
-        
         # 1. Hash Password
-        st.write("[DEBUG] Step 1: Hashing password...")
         hashed_bytes = bcrypt.hashpw(new_password_plain.encode('utf-8'), bcrypt.gensalt())
         hashed_pw = hashed_bytes.decode('utf-8')
-        st.write(f"[DEBUG] Hash created: {hashed_pw[:15]}...")
         
         # 2. Update Database
-        st.write("[DEBUG] Step 2: Calling db_manager.update_user_password()...")
-        result = db_manager.update_user_password(username, hashed_pw)
-        st.write(f"[DEBUG] DB update result: {result}")
-        
-        if result:
+        if db_manager.update_user_password(username, hashed_pw):
             return True, "비밀번호가 변경되었습니다. (모든 기기에 즉시 적용됨)"
         else:
             return False, "사용자를 찾을 수 없습니다."
             
     except Exception as e:
-        st.error(f"[DEBUG] Exception caught: {type(e).__name__}")
-        st.error(f"[DEBUG] Exception message: {str(e)}")
-        st.code(traceback.format_exc())
         return False, f"오류 발생: {e}"
