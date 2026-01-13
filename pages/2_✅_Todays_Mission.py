@@ -3,6 +3,7 @@ import pandas as pd
 from datetime import datetime
 import time
 from modules.db_manager import db_manager
+import modules.time_utils as time_utils
 
 import modules.auth_utils as auth_utils
 import modules.ui_components as ui_components
@@ -45,7 +46,7 @@ def ensure_todays_missions(target_child_id):
     if "todays_missions_checked" not in st.session_state:
         st.session_state["todays_missions_checked"] = {}
     
-    today_str = datetime.now().strftime("%Y-%m-%d")
+    today_str = time_utils.get_today_str()
     check_key = f"{target_child_id}_{today_str}"
     
     if st.session_state["todays_missions_checked"].get(check_key):
@@ -63,7 +64,7 @@ def ensure_todays_missions(target_child_id):
 
         import uuid
         new_missions = []
-        today_date = datetime.now()
+        today_date = time_utils.get_now()
         weekday_map = ["월", "화", "수", "목", "금", "토", "일"]
         today_weekday = weekday_map[today_date.weekday()]
 
@@ -142,7 +143,7 @@ current_tab = st.radio(
 )
 st.divider()
 
-today_str = datetime.now().strftime("%Y-%m-%d")
+today_str = time_utils.get_today_str()
 
 # --- TAB 1: Today's Mission ---
 if current_tab == "✅ 오늘의 미션":
@@ -439,7 +440,7 @@ if current_tab == "🛠️ 미션 통합 관리":
                     st.session_state["new_def_buffer"] = [] # Clear buffer
                     
                     # Force Re-gen of Today's Missions
-                    today_str = datetime.now().strftime("%Y-%m-%d")
+                    today_str = time_utils.get_today_str()
                     check_key = f"{target_child_id}_{today_str}"
                     if "todays_missions_checked" in st.session_state:
                         st.session_state["todays_missions_checked"][check_key] = False
@@ -644,6 +645,9 @@ if current_tab == "📜 이력 관리":
                         # 1. Identify rows to keep/update
                         df_others = full_logs_raw[~view_mask]
                         df_updated_subset = edited_rewards.copy()
+                        
+                        # CRITICAL: Restore User column (lost during data_editor)
+                        df_updated_subset['User'] = target_child_name
                         
                         if "__id" in df_updated_subset.columns: del df_updated_subset["__id"]
                         if "__id" in df_others.columns: del df_others["__id"]
