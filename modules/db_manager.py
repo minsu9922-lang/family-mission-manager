@@ -4,6 +4,7 @@ import pandas as pd
 from datetime import datetime
 import time
 import random
+import modules.time_utils as time_utils
 
 class DataManager:
     def __init__(self):
@@ -205,7 +206,7 @@ class DataManager:
     def log_activity(self, user_name, activity_type, content, reward=0):
         logs_df = self.get_data("Logs") # Use get_data
         new_log = {
-            "Timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+            "Timestamp": time_utils.get_current_time_str(),
             "User": user_name,
             "Type": activity_type,
             "Content": content,
@@ -353,7 +354,7 @@ class DataManager:
         import uuid
         new_praise = {
             "praise_id": str(uuid.uuid4()),
-            "date": datetime.now().strftime("%Y-%m-%d"),
+            "date": time_utils.get_today_str(),
             "user_name": user_name,
             "content": content,
             "status": "대기 중" 
@@ -401,6 +402,61 @@ class DataManager:
         else:
             updated_df = pd.concat([df, pd.DataFrame([new_def])], ignore_index=True)
         self.update_data("MissionDefinitions", updated_df)
+
+    def get_user_dict(self):
+        """
+        Read user credentials from 'Users' sheet and return in streamlit-authenticator format.
+        Returns: {'usernames': {'dad': {'name': ..., 'password': ..., 'email': ..., 'role': ...}, ...}}
+        """
+        users_df = self.get_data("Users", ttl=0)  # Force fresh read, no cache
+        
+        if users_df.empty:
+            return {"usernames": {}}
+        
+        usernames_dict = {}
+        for _, row in users_df.iterrows():
+            username = row.get("username", "")
+            if not username or pd.isna(username):
+                continue
+                
+            usernames_dict[username] = {
+                "name": row.get("name", username) if not pd.isna(row.get("name")) else username,
+                "password": row.get("password", "") if not pd.isna(row.get("password")) else "",
+                "email": row.get("email", "") if not pd.isna(row.get("email")) else "",
+                "role": row.get("role", "user") if not pd.isna(row.get("role")) else "user"
+            }
+        
+        return {"usernames": usernames_dict}
+
+    def update_user_password(self, username, new_password_hash):
+        """
+        Update password for a specific user in 'Users' sheet.
+        Args:
+            username: user ID (e.g., 'dad', 'son1')
+            new_password_hash: bcrypt hashed password string
+        Returns:
+            bool: True if update successful, False otherwise
+        """
+        users_df = self.get_data("Users", ttl=0)  # Force fresh read
+        
+        if users_df.empty:
+            return False
+        
+        # Check if user exists
+        if username not in users_df['username'].values:
+            return False
+        
+        # Update password
+        idx = users_df[users_df['username'] == username].index[0]
+        users_df.at[idx, 'password'] = new_password_hash
+        
+        # Update timestamp (KST)
+        if 'updated_at' in users_df.columns:
+            import modules.time_utils as time_utils
+            users_df.at[idx, 'updated_at'] = time_utils.get_current_time_str()
+        
+        # Write back to Google Sheets
+        return self.update_data("Users", users_df)
 
 # Singleton instance
 db_manager = DataManager()

@@ -1,57 +1,40 @@
 import streamlit as st
 import streamlit_authenticator as stauth
+import toml
+import os
+import bcrypt
+from modules.db_manager import db_manager
 
 def get_auth_config():
     """
-    Constructs the authentication configuration dictionary from st.secrets.
-    Using dummy hashes for '1234' if not present in secrets for safety.
+    Constructs the authentication configuration dictionary.
+    Now reads from Google Sheets 'Users' table via db_manager (DB-based).
+    Cookie settings still from st.secrets for security.
     """
-    # Default dummy hash for '1234'
-    default_hash = "$2b$12$1.j.j.j.j.j.j.j.j.j.j.j.j.j.j.j.j.j.j.j.j.j.j.j.j" 
-    
-    users = {
-        "dad": {
-            "name": "아빠",
-            "password": st.secrets["passwords"].get("dad", default_hash),
-            "email": "dad@family.com",
-            "role": "admin"
-        },
-        "mom": {
-            "name": "엄마",
-            "password": st.secrets["passwords"].get("mom", default_hash),
-            "email": "mom@family.com",
-            "role": "admin"
-        },
-        "son1": {
-            "name": "큰보물",
-            "password": st.secrets["passwords"].get("son1", default_hash),
-            "email": "son1@family.com",
-            "role": "user"
-        },
-        "son2": {
-            "name": "작은보물",
-            "password": st.secrets["passwords"].get("son2", default_hash),
-            "email": "son2@family.com",
-            "role": "user"
+    try:
+        # Get user credentials from DB
+        credentials = db_manager.get_user_dict()
+        
+        # Get cookie settings from secrets (not in DB for security)
+        cookie_config = {
+            "expiry_days": st.secrets.get("auth", {}).get("cookie_expiry_days", 30),
+            "key": st.secrets.get("auth", {}).get("cookie_key", "random_signature_key"),
+            "name": st.secrets.get("auth", {}).get("cookie_name", "family_app_cookie")
         }
-    }
-
-    return {
-        "credentials": {
-            "usernames": users
-        },
-        "cookie": {
-            "expiry_days": st.secrets["auth"]["cookie_expiry_days"],
-            "key": st.secrets["auth"]["cookie_key"],
-            "name": st.secrets["auth"]["cookie_name"]
+            
+        # Structure for authenticator
+        return {
+            "credentials": credentials,
+            "cookie": cookie_config
         }
-    }
+    except Exception as e:
+        st.error(f"Error loading auth config from DB: {e}")
+        # Fallback: try to read from secrets.toml
+        return st.secrets
 
 def get_authenticator():
     """
     Initializes and returns the authenticator object.
-    Checks session state for existing object to avoid re-init issues if possible,
-    though stauth usually handles re-init fine.
     """
     config = get_auth_config()
     
@@ -66,42 +49,21 @@ def get_authenticator():
 def check_login(authenticator):
     """
     Checks current login status. 
-    Calls authenticator.login() to check for valid cookie and restore session.
     """
-    # Simply call login (it handles cookie checks internally)
-    # Only render login widget if not authenticated
     if st.session_state.get("authentication_status") is not True:
-        # CLEANUP: If not authenticated, ensure role/user state is cleared 
-        # to prevent previous session leaking (e.g. Dad -> Logout -> Son Login -> Sees Dad's Admin View)
-        # CLEANUP: If not authenticated, ensure role/user state is cleared 
-        # to prevent previous session leaking. 
-        # IMPORTANT: Do NOT delete 'name', 'username', 'authentication_status' keys, 
-        # as authenticator might access them. Set to None instead.
-        keys_to_clear = ["role", "target_child_name", "selected_child"]
-        for k in keys_to_clear:
-            if k in st.session_state:
-                del st.session_state[k]
+        # Cleanup session
+        for k in ["role", "target_child_name", "selected_child"]:
+            if k in st.session_state: del st.session_state[k]
         
-        # Ensure authenticator keys exist and are None if not authenticated
-        auth_keys = ["name", "username", "authentication_status"]
-        for k in auth_keys:
-            if k not in st.session_state:
-                st.session_state[k] = None
-
         try:
-            # authenticator.login returns (name, status, username) or None if just rendering
-            res = authenticator.login(location="main")
-            if res:
-                 name, status, username = res
+            authenticator.login(location="main")
         except Exception as e:
             st.error(f"Login Widget Error: {e}")
             return None
 
-        # Force Error Display immediately if False
         if st.session_state.get("authentication_status") is False:
             st.error("❌ 아이디 또는 비밀번호가 올바르지 않습니다.")
             
-        # Helper: Ensure UI clears on success (optional but good for UX)
         if st.session_state.get("authentication_status") is True:
              import time
              time.sleep(0.5)
@@ -110,10 +72,6 @@ def check_login(authenticator):
     return st.session_state.get("authentication_status")
 
 def get_user_id_map():
-    """
-    Returns a dictionary mapping Display Name (Korean) to User ID.
-    Useful for looking up ID from the sidebar selection ("큰보물" -> "son1").
-    """
     return {
         "큰보물": "son1",
         "작은보물": "son2",
@@ -122,72 +80,37 @@ def get_user_id_map():
     }
 
 def get_target_child_id():
-    """
-    Resolves the ID of the target child currently being viewed.
-    - If Admin: Uses 'selected_child' from sidebar (via 'target_child_name').
-    - If Child: Uses own name/ID.
-    Returns: User ID string (e.g., "son1", "son2").
-    """
     target_name = st.session_state.get("target_child_name", st.session_state.get("name", "User"))
     user_map = get_user_id_map()
-    # Default to "son1" (Main child) if resolution fails or mapping missing
     return user_map.get(target_name, "son1")
 
 def change_password(username, new_password_plain):
     """
-    Updates the password for a user in secrets.toml and the active authenticator.
-    Returns (Success, Message).
+    Updates the password in Google Sheets 'Users' table (DB-based).
+    Changes are immediately reflected across all devices.
     """
-    import toml
-    # import streamlit_authenticator as stauth # Removed
-    import bcrypt # Use bcrypt directly for robustness
-    
-    # 1. Generate Hash
+    import traceback
     try:
-        # Use bcrypt directly to avoid Hasher API version mismatch
-        # stauth uses bcrypt internally, so this is compatible.
+        st.write(f"[DEBUG] Starting password change for: {username}")
+        
+        # 1. Hash Password
+        st.write("[DEBUG] Step 1: Hashing password...")
         hashed_bytes = bcrypt.hashpw(new_password_plain.encode('utf-8'), bcrypt.gensalt())
         hashed_pw = hashed_bytes.decode('utf-8')
-    except Exception as e:
-        return False, f"Hashing failed: {e}"
-
-    # 2. Update secrets.toml (Persistent)
-    secrets_path = ".streamlit/secrets.toml"
-    try:
-        with open(secrets_path, "r", encoding="utf-8") as f:
-            config = toml.load(f)
+        st.write(f"[DEBUG] Hash created: {hashed_pw[:15]}...")
         
-        # Ensure structure exists
-        if "passwords" not in config:
-            config["passwords"] = {}
-            
-        config["passwords"][username] = hashed_pw
+        # 2. Update Database
+        st.write("[DEBUG] Step 2: Calling db_manager.update_user_password()...")
+        result = db_manager.update_user_password(username, hashed_pw)
+        st.write(f"[DEBUG] DB update result: {result}")
         
-        with open(secrets_path, "w", encoding="utf-8") as f:
-            toml.dump(config, f)
+        if result:
+            return True, "비밀번호가 변경되었습니다. (모든 기기에 즉시 적용됨)"
+        else:
+            return False, "사용자를 찾을 수 없습니다."
             
     except Exception as e:
-        return False, f"File write failed: {e}"
-
-    # 3. Update Session State (Immediate Effect)
-    # We need to update the credential dictionary that authenticator reads.
-    # But authenticator object might be re-inited on rerun from secrets?
-    # No, get_authenticator() reads st.secrets.
-    # st.secrets IS NOT updated by file write immediately in Streamlit.
-    # So we must manualy update the 'credentials' in session state?
-    # Actually, check_login uses st.session_state['authenticator'] if it exists?
-    # Re-reading get_authenticator: it calls get_auth_config which reads st.secrets.
-    # So on next rerun, it will read OLD secrets unless we handle it.
-    # WE CANNOT UPDATE st.secrets programmatically.
-    # Solution: We can't easily force Streamlit to reload secrets without restart.
-    # BUT, we can make `get_auth_config` read from the FILE if we want?
-    # Or, simpler: We tell the user "Password changed. Please re-login."
-    # AND/OR we manually update the `authenticator.credentials['usernames'][username]['password']`
-    # so that *this session* remains valid if using cookie re-check.
-    
-    # Let's try to update st.secrets cache if possible? No.
-    # Let's just return True. The file IS updated, so on restart it works.
-    # For now, it's safer to ask user to re-login if changing OWN password.
-    # If Admin changing Child's, child will face it on next login.
-    
-    return True, "비밀번호가 변경되었습니다."
+        st.error(f"[DEBUG] Exception caught: {type(e).__name__}")
+        st.error(f"[DEBUG] Exception message: {str(e)}")
+        st.code(traceback.format_exc())
+        return False, f"오류 발생: {e}"

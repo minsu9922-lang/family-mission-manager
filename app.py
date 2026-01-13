@@ -3,6 +3,15 @@ import streamlit_authenticator as stauth
 import yaml
 from yaml.loader import SafeLoader
 
+# Force KST timezone for entire application
+import os
+os.environ['TZ'] = 'Asia/Seoul'
+try:
+    import time
+    time.tzset()  # Unix/Linux only - applies timezone
+except AttributeError:
+    pass  # Windows doesn't have tzset()
+
 # Page Configuration
 st.set_page_config(
     page_title="보물지도: Family Hub",
@@ -18,6 +27,8 @@ import modules.ui_components as ui_components
 # Initialize Authenticator
 authenticator = auth_utils.get_authenticator()
 
+# Check Login (Recovery & Widget)
+# Check Login (Recovery & Widget)
 # Check Login (Recovery & Widget)
 auth_status = auth_utils.check_login(authenticator)
 
