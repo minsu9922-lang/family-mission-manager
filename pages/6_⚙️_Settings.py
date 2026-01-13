@@ -45,23 +45,30 @@ if user_role == "admin":
         df_settings["category"] = df_settings["category"].astype(str).str.strip()
 
 
-# Define Tabs based on Role
+# Define Tabs based on Role (Using st.radio for state persistence)
 if user_role == "admin":
-    tabs = ["🏷️ 도장 관리", "🎟️ 쿠폰 관리", "⚙️ 기타 설정", "🔑 비밀번호 변경"]
-    tab1, tab2, tab3, tab4 = st.tabs(tabs)
+    tab_options = ["🏷️ 도장 관리", "🎟️ 쿠폰 관리", "⚙️ 기타 설정", "🔑 비밀번호 변경"]
 else:
-    tabs = ["🔑 비밀번호 변경"]
-    tab4, = st.tabs(tabs)
-    # Dummy tabs for variable safety if referenced (unlikely)
-    tab1 = tab2 = tab3 = None
+    tab_options = ["🔑 비밀번호 변경"]
+
+current_tab = st.radio(
+    "설정 메뉴",
+    tab_options,
+    horizontal=True,
+    label_visibility="collapsed",
+    key="settings_tab_selection"
+)
+st.divider()
 
 # --- ADMIN ONLY CONTENT ---
 if user_role == "admin":
-    # Helper: User Options
-    child_options = ["All"] + [u for u in auth_utils.get_auth_config()['credentials']['usernames'].keys() if u.startswith("son")]
+    # Helper: User Options (Safe Access)
+    credentials = auth_utils.get_auth_config().get('credentials', {})
+    usernames = credentials.get('usernames', {}) if isinstance(credentials, dict) else {}
+    child_options = ["All"] + [u for u in usernames.keys() if u.startswith("son")]
 
     # --- TAB 1: STAMPS ---
-    with tab1:
+    if current_tab == "🏷️ 도장 관리":
         st.subheader("🏷️ 칭찬 도장 관리")
         st.caption("자녀별 도장 종류와 금액을 설정합니다. `target_child`를 지정하면 해당 자녀에게만 보입니다.")
         
@@ -97,7 +104,7 @@ if user_role == "admin":
                 except Exception as e: st.error(f"오류: {e}")
 
     # --- TAB 2: COUPONS ---
-    with tab2:
+    if current_tab == "🎟️ 쿠폰 관리":
         st.subheader("🎟️ 게임/보너스 쿠폰 관리")
         st.caption("쿠폰 이름과 사용 시간(분)을 설정합니다.")
         
@@ -133,7 +140,7 @@ if user_role == "admin":
                 except Exception as e: st.error(f"오류: {e}")
 
     # --- TAB 3: GENERAL ---
-    with tab3:
+    if current_tab == "⚙️ 기타 설정":
         st.subheader("⚙️ 기타 설정")
         df_general = df_settings[~df_settings["category"].isin(["Stamp", "Coupon"])].copy()
         
@@ -160,7 +167,7 @@ if user_role == "admin":
                 except Exception as e: st.error(f"오류: {e}")
 
 # --- TAB 4: PASSWORD CHANGE (Available to All) ---
-with tab4:
+if current_tab == "🔑 비밀번호 변경":
     st.subheader("🔑 비밀번호 변경")
     st.write("새로운 비밀번호를 입력해주세요.")
     
