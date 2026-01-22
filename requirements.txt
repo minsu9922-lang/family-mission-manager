@@ -3,6 +3,6 @@ pandas
 pyyaml
 st-gsheets-connection
 gspread
-google-auth
 google-auth==2.35.0
 pytz
+toml
