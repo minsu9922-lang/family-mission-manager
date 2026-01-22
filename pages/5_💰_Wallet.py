@@ -1,23 +1,13 @@
 import streamlit as st
 import pandas as pd
 from modules.db_manager import db_manager
+from modules.page_utils import initialize_page
 
 import modules.auth_utils as auth_utils
 import modules.ui_components as ui_components
 
-st.set_page_config(page_title="나의 지갑", page_icon="💰", layout="wide")
-
-# Initialize Authenticator
-authenticator = auth_utils.get_authenticator()
-
-# Check Login
-auth_status = auth_utils.check_login(authenticator)
-
-if auth_status:
-    ui_components.inject_mobile_css()
-    ui_components.render_sidebar(authenticator)
-else:
-    st.stop()
+# 페이지 초기화
+initialize_page("나의 지갑", "💰")
 
 # Resolve Target Child (Centralized)
 # Wallet needs Name for Logs (DB stores Name) and Name for display.
@@ -55,7 +45,6 @@ except Exception as e:
 
 # Calculate Assets
 total_stamps = 0
-total_coupons = 0
 total_money = 0
 
 # Resolve Target Child ID (Centralized)
@@ -96,31 +85,6 @@ if not my_logs.empty:
     last_settlement_idx = -1
     if not settlement_logs.empty:
         last_settlement_idx = settlement_logs.index[-1]
-    
-    # Slice active logs
-    # We iterate only ACTIVE logs for money calculation.
-    # Total coupons can track history? Or just active? 
-    # Usually wallet shows CURRENT holding. So active.
-    # But code `total_coupons` tracked full history in old logic?
-    # Let's align: Wallet usually shows "Current Assets".
-    # So we should use active_logs for everything?
-    # Wait, simple approach:
-    # 1. Calculate 'total_coupons' (all time - used).
-    # 2. Calculate 'current_allowance' (all time stamps - settled).
-    # Logic is simpler if we iterate all logs and maintain running balance.
-    
-    # Re-reading old logic:
-    # It iterated `my_logs` (ALL) to calc `total_stamps` and `total_coupons`.
-    # It calculated `active_logs` separately for `all_stamp_count`.
-    # And `current_allowance` was `all_stamp_count * stamp_value`.
-    
-    # New Logic:
-    # 1. Iterate ALL for `total_coupons` (assuming no settlement for coupons, just accumulation? Or minus?)
-    #    Actually current code `total_coupons += val` just adds. Needs logic for "Used"?
-    #    "Usage" logs not mentioned yet.
-    # 2. Iterate ACTIVE (post-settlement) for `current_allowance`.
-    
-    # Let's fix `current_allowance` logic first (User request).
     
     active_logs = my_logs.loc[last_settlement_idx+1:]
     
@@ -169,16 +133,42 @@ if not my_logs.empty:
             
             calculated_total_money += (r_reward * price)
             unsettled_stamps += r_reward
-            
-    # Calculate Coupons (All Time? Or Active?)
-    # Existing code `for _, row in my_logs.iterrows():` implies All Time.
-    # Assuming "Usage" is not yet implemented or coupons just accumulate.
-    for _, row in my_logs.iterrows():
-         if row["Type"] == "Coupon":
-              try:
-                  val = int(float(str(row["Reward"]).replace(",", "")))
-                  total_coupons += val
-              except: pass
+
+# Calculate Available Coupons (획득 - 사용)
+# 쿠폰 로직: 개별 쿠폰 추적
+from modules.coupon_utils import extract_minutes_from_coupon, format_minutes
+
+coupon_logs = my_logs[my_logs["Type"] == "Coupon"].copy()
+coupon_used_logs = my_logs[my_logs["Type"] == "CouponUsed"].copy()
+
+# 개별 쿠폰 아이템 생성
+available_coupon_items = []
+for _, row in coupon_logs.iterrows():
+    coupon_name = str(row["Content"]).replace("쿠폰: ", "").strip()
+    reward = int(row["Reward"]) if pd.notna(row["Reward"]) else 1
+    timestamp = row["Timestamp"]
+    
+    for i in range(reward):
+        available_coupon_items.append({
+            "name": coupon_name,
+            "timestamp": timestamp,
+            "id": f"{timestamp}_{i}"
+        })
+
+# 사용된 쿠폰 제거
+for _, row in coupon_used_logs.iterrows():
+    coupon_name = str(row["Content"]).replace("쿠폰: ", "").strip()
+    used_count = abs(int(row["Reward"])) if pd.notna(row["Reward"]) else 1
+    
+    # 같은 이름의 쿠폰을 used_count만큼 제거
+    removed = 0
+    available_coupon_items = [
+        item for item in available_coupon_items
+        if not (item["name"] == coupon_name and removed < used_count and (removed := removed + 1))
+    ]
+
+# 실제 보유 쿠폰 수
+total_coupons = len(available_coupon_items)
 
 # Final Results
 current_allowance = calculated_total_money
@@ -200,11 +190,73 @@ st.subheader("📊 자산 상세 현황")
 c1, c2 = st.columns(2)
 with c1:
     st.markdown("#### 🎫 쿠폰 상세")
-    coupon_logs = my_logs[my_logs["Type"] == "Coupon"]
-    if coupon_logs.empty:
+    
+    # available_coupon_items는 이미 위에서 계산됨
+    if not available_coupon_items:
         st.info("보유한 쿠폰이 없습니다.")
     else:
-        st.dataframe(coupon_logs[["Timestamp", "Content", "Reward"]], hide_index=True, width="stretch")
+        # 현재 보유 쿠폰 표시
+        coupon_df = pd.DataFrame([
+            {"쿠폰명": item["name"], "획득일시": item["timestamp"]}
+            for item in available_coupon_items
+        ])
+        st.dataframe(coupon_df, hide_index=True, width="stretch")
+        
+        st.markdown("---")
+        st.markdown("##### 🎟️ 쿠폰 제출하기")
+        
+        # 중복 쿠폰 번호 매기기
+        coupon_display_options = []
+        name_counts = {}
+        for item in available_coupon_items:
+            name = item["name"]
+            if name not in name_counts:
+                name_counts[name] = 0
+            name_counts[name] += 1
+            
+            # 같은 이름이 여러 개면 번호 표시
+            if sum(1 for i in available_coupon_items if i["name"] == name) > 1:
+                coupon_display_options.append(f"{name} #{name_counts[name]}")
+            else:
+                coupon_display_options.append(name)
+        
+        selected_indices = st.multiselect(
+            "제출할 쿠폰 선택",
+            options=range(len(available_coupon_items)),
+            format_func=lambda x: coupon_display_options[x],
+            key="selected_coupons"
+        )
+        
+        if selected_indices:
+            # 선택된 쿠폰의 총 시간 계산
+            total_minutes = sum(
+                extract_minutes_from_coupon(available_coupon_items[idx]["name"])
+                for idx in selected_indices
+            )
+            time_str = format_minutes(total_minutes)
+            st.info(f"선택된 쿠폰: {len(selected_indices)}장 (총 {time_str})")
+            
+            if st.button("🎟️ 선택한 쿠폰 제출", type="primary"):
+                def submit_coupons_action():
+                    # 선택된 쿠폰을 타입별로 그룹화
+                    from collections import Counter
+                    selected_coupons = [available_coupon_items[idx]["name"] for idx in selected_indices]
+                    coupon_counts = Counter(selected_coupons)
+                    
+                    # 각 타입별로 로그 생성
+                    for coupon_name, qty in coupon_counts.items():
+                        db_manager.log_activity(
+                            target_child_name,
+                            "CouponUsed",
+                            f"쿠폰: {coupon_name}",
+                            -qty  # 음수로 저장
+                        )
+                    return True
+                
+                ui_components.handle_submission(
+                    submit_coupons_action,
+                    success_msg=f"{len(selected_indices)}장의 쿠폰이 제출되었습니다!"
+                )
 
 with c2:
     st.markdown("#### 💮 도장 상세")
@@ -267,7 +319,7 @@ else:
     
     if user_role == 'admin':
         edited_settlements = st.data_editor(
-            view_df[["__id", "Timestamp", "Content", "Reward"]],
+            view_df[["__id", "Timestamp", "Content", "Reward"]].reset_index(drop=True),
             column_config={
                 "__id": None,
                 "Timestamp": st.column_config.TextColumn("일시", disabled=True),
@@ -310,3 +362,27 @@ else:
             width="stretch",
             hide_index=True
         )
+
+st.divider()
+
+# 쿠폰 제출 이력
+st.subheader("🎟️ 쿠폰 제출 이력")
+coupon_used_logs = my_logs[my_logs["Type"] == "CouponUsed"]
+
+if coupon_used_logs.empty:
+    st.info("아직 쿠폰 제출 이력이 없습니다.")
+else:
+    # 표시용 DataFrame 생성
+    display_logs = coupon_used_logs[["Timestamp", "Content", "Reward"]].copy()
+    display_logs["Reward"] = display_logs["Reward"].abs()  # 음수를 양수로 변환하여 표시
+    
+    st.dataframe(
+        display_logs,
+        column_config={
+            "Timestamp": "제출 일시",
+            "Content": "쿠폰명",
+            "Reward": "제출 수량"
+        },
+        width="stretch",
+        hide_index=True
+    )

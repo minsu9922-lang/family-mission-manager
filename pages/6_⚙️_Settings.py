@@ -1,23 +1,11 @@
 import streamlit as st
 import pandas as pd
 from modules.db_manager import db_manager
-
+from modules.page_utils import initialize_page
 import modules.auth_utils as auth_utils
-import modules.ui_components as ui_components
 
-st.set_page_config(page_title="설정 관리", page_icon="⚙️", layout="wide")
-
-# Initialize Authenticator
-authenticator = auth_utils.get_authenticator()
-
-# Check Login
-auth_status = auth_utils.check_login(authenticator)
-
-if auth_status:
-    ui_components.inject_mobile_css()
-    ui_components.render_sidebar(authenticator)
-else:
-    st.stop()
+# 페이지 초기화
+initialize_page("설정 관리", "⚙️")
     
 st.title("⚙️ 설정 (Settings)")
 
@@ -73,13 +61,13 @@ if user_role == "admin":
         st.caption("자녀별 도장 종류와 금액을 설정합니다. `target_child`를 지정하면 해당 자녀에게만 보입니다.")
         
         df_stamp = df_settings[df_settings["category"] == "Stamp"].copy()
-        df_stamp_view = df_stamp.drop(columns=["category"], errors="ignore")
+        df_stamp_view = df_stamp.drop(columns=["category"], errors="ignore").reset_index(drop=True)
         if "unit" in df_stamp_view.columns:
             df_stamp_view["unit"] = df_stamp_view["unit"].astype(str)
         
         with st.form(key="form_stamp", clear_on_submit=False):
             edited_stamp_view = st.data_editor(
-                df_stamp_view.reset_index(drop=True),
+                df_stamp_view,
                 column_config={
                     "item_name": st.column_config.TextColumn("도장 이름", required=False),
                     "value": st.column_config.NumberColumn("금액 (원)", required=False, step=10),
@@ -109,13 +97,13 @@ if user_role == "admin":
         st.caption("쿠폰 이름과 사용 시간(분)을 설정합니다.")
         
         df_coupon = df_settings[df_settings["category"] == "Coupon"].copy()
-        df_coupon_view = df_coupon.drop(columns=["category"], errors="ignore")
+        df_coupon_view = df_coupon.drop(columns=["category"], errors="ignore").reset_index(drop=True)
         if "unit" in df_coupon_view.columns:
              df_coupon_view["unit"] = df_coupon_view["unit"].astype(str)
         
         with st.form(key="form_coupon", clear_on_submit=False):
             edited_coupon_view = st.data_editor(
-                df_coupon_view.reset_index(drop=True),
+                df_coupon_view,
                 column_config={
                     "item_name": st.column_config.TextColumn("쿠폰 이름", required=False),
                     "value": st.column_config.NumberColumn("시간 (분)", required=False, step=10),
@@ -142,11 +130,11 @@ if user_role == "admin":
     # --- TAB 3: GENERAL ---
     if current_tab == "⚙️ 기타 설정":
         st.subheader("⚙️ 기타 설정")
-        df_general = df_settings[~df_settings["category"].isin(["Stamp", "Coupon"])].copy()
+        df_general = df_settings[~df_settings["category"].isin(["Stamp", "Coupon"])].copy().reset_index(drop=True)
         
         with st.form(key="form_general", clear_on_submit=False):
             edited_general = st.data_editor(
-                df_general.reset_index(drop=True),
+                df_general,
                 column_config={
                      "category": st.column_config.SelectboxColumn("카테고리", options=["Reward", "General"], required=False),
                      "item_name": st.column_config.TextColumn("항목명", required=False),

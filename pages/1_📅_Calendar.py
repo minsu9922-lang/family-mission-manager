@@ -3,33 +3,12 @@ import pandas as pd
 from datetime import datetime
 import time
 from modules.db_manager import db_manager
+from modules.page_utils import initialize_page
 import modules.auth_utils as auth_utils
 import modules.ui_components as ui_components
 
-st.set_page_config(page_title="주간 시간표", page_icon="📅", layout="wide")
-
-# Sidebar (Render first for UI consistency, but checking login might rerender)
-# Actually, better to check login first, then render sidebar if valid? 
-# Sidebar renders content based on session state. check_login ensures session state.
-# But check_login MIGHT show login widget.
-# Strategy: Call check_login. If True, render sidebar and content.
-# If False, login widget is shown by check_login (if we configured it so? No, check_login calls authenticator.login() which shows widget).
-
-# Initialize Authenticator
-authenticator = auth_utils.get_authenticator()
-
-# Check Login
-auth_status = auth_utils.check_login(authenticator)
-
-if auth_status:
-    ui_components.inject_mobile_css()
-    # Sidebar
-    ui_components.render_sidebar(authenticator)
-else:
-    # Login failed or not logged in
-    # authenticator.login() inside check_login already rendered the form? 
-    # Yes.
-    st.stop()
+# 페이지 초기화
+initialize_page("주간 시간표", "📅")
 
 st.title("📅 주간 시간표 (Weekly Schedule)")
 
@@ -316,7 +295,7 @@ if current_tab == "🛠️ 일정 등록/관리":
         edit_df = edit_df.drop_duplicates(subset=["title", "days", "start_time", "end_time"])
         
         edited_schedule = st.data_editor(
-            edit_df,
+            edit_df.reset_index(drop=True),
             column_config={
                 "schedule_id": None, # Hide ID
                 "title": st.column_config.TextColumn("일정 내용", required=True),

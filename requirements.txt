@@ -1,8 +1,8 @@
-streamlit
-streamlit-authenticator
+streamlit-authenticator>=0.4.1
 pandas
 pyyaml
 st-gsheets-connection
 gspread
 google-auth
 google-auth==2.35.0
+pytz

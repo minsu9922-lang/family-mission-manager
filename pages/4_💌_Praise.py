@@ -2,23 +2,12 @@ import streamlit as st
 import pandas as pd
 import time
 from modules.db_manager import db_manager
-
+from modules.page_utils import initialize_page
 import modules.auth_utils as auth_utils
 import modules.ui_components as ui_components
 
-st.set_page_config(page_title="칭찬합니다", page_icon="💌", layout="wide")
-
-# Initialize Authenticator
-authenticator = auth_utils.get_authenticator()
-
-# Check Login
-auth_status = auth_utils.check_login(authenticator)
-
-if auth_status:
-    ui_components.inject_mobile_css()
-    ui_components.render_sidebar(authenticator)
-else:
-    st.stop()
+# 페이지 초기화
+initialize_page("칭찬합니다", "💌")
 
 # Resolve Target Child ID (Centralized)
 target_id = auth_utils.get_target_child_id()
@@ -187,7 +176,7 @@ if current_tab == "👑 칭찬 승인/확인":
         
         if not history_list.empty:
             # History Editor for Admin
-            history_editor_df = history_list[["praise_id", "date", "content", "status"]].copy()
+            history_editor_df = history_list[["praise_id", "date", "content", "status"]].copy().reset_index(drop=True)
             
             edited_history = st.data_editor(
                 history_editor_df,
@@ -275,7 +264,7 @@ if current_tab == "👑 칭찬 승인/확인":
                 reward_logs_view = all_logs_raw[reward_mask].copy()
                 
                 edited_rewards = st.data_editor(
-                    reward_logs_view[["__id", "Timestamp", "Content", "Reward"]],
+                    reward_logs_view[["__id", "Timestamp", "Content", "Reward"]].reset_index(drop=True),
                     column_config={
                         "__id": None,
                         "Timestamp": st.column_config.TextColumn("일시", disabled=True),

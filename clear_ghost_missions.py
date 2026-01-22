@@ -1,6 +1,7 @@
 from modules.db_manager import db_manager
 import pandas as pd
 from datetime import datetime
+import modules.time_utils as time_utils
 
 print("Initializing Cleanup v2...")
 
@@ -15,7 +16,7 @@ if missions.empty:
 # 2. Define Criteria
 # We want to DELETE exact matches: assignee='son1' AND date='TODAY'
 # But let's check what 'TODAY' looks like in the DB first.
-today_dt = datetime.now()
+today_dt = time_utils.get_now()
 today_str = today_dt.strftime("%Y-%m-%d")
 
 # Robust Filter

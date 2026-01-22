@@ -317,7 +317,7 @@ class DataManager:
              return df[df["user_name"] == user_id]
         return df
 
-    def add_reading_log(self, read_date, book_type, book_title, author, one_line_review, user_name):
+    def add_reading_log(self, read_date, book_type, book_title, author, one_line_review, user_name, pages_read=""):
         df = self.get_data("Reading") # Use get_data
         import uuid
         new_log = {
@@ -327,6 +327,7 @@ class DataManager:
             "book_title": book_title,
             "author": author,
             "one_line_review": one_line_review,
+            "pages_read": pages_read,
             "user_name": user_name
         }
         if df.empty:

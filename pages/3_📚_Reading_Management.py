@@ -2,23 +2,13 @@ import streamlit as st
 import pandas as pd
 from datetime import datetime
 from modules.db_manager import db_manager
+from modules.page_utils import initialize_page
 
 import modules.auth_utils as auth_utils
 import modules.ui_components as ui_components
 
-st.set_page_config(page_title="독서 관리", page_icon="📚", layout="wide")
-
-# Initialize Authenticator
-authenticator = auth_utils.get_authenticator()
-
-# Check Login
-auth_status = auth_utils.check_login(authenticator)
-
-if auth_status:
-    ui_components.inject_mobile_css()
-    ui_components.render_sidebar(authenticator)
-else:
-    st.stop()
+# 페이지 초기화
+initialize_page("독서 관리", "📚")
 
 # Resolve Target Child ID (Centralized)
 target_id = auth_utils.get_target_child_id()
@@ -56,12 +46,30 @@ if current_tab == "독서 기록장":
     if df_reading.empty:
         st.info("아직 등록된 독서 기록이 없습니다.")
     else:
+        # Determine starting number based on child
+        from modules.constants import READING_START_NUMBERS, DEFAULT_START_NUMBER
+        start_number = READING_START_NUMBERS.get(target_id, DEFAULT_START_NUMBER)
+        
+        # Ensure pages_read column exists in the source dataframe
+        if "pages_read" not in df_reading.columns:
+            df_reading["pages_read"] = ""
+        
         # Columns to display - Include reading_id for identity preservation
-        display_df = df_reading[["reading_id", "read_date", "book_type", "book_title", "author", "one_line_review"]].copy()
-        display_df.columns = ["reading_id", "읽은 날짜", "구분", "책 제목", "지은이", "감상평"]
+        display_df = df_reading[["reading_id", "read_date", "book_type", "book_title", "pages_read", "author", "one_line_review"]].copy()
+        
+        # Handle missing values in pages_read
+        display_df["pages_read"] = display_df["pages_read"].fillna("")
+        
+        # Add sequential number column at the beginning (reversed - latest book has highest number)
+        # Since df is sorted by date descending, first row is newest
+        total_books = len(display_df)
+        display_df.insert(1, "번호", range(start_number + total_books - 1, start_number - 1, -1))
+        
+        display_df.columns = ["reading_id", "번호", "읽은 날짜", "구분", "책 제목", "읽은 쪽수", "지은이", "감상평"]
         
         # Ensure Text Columns are strings
         display_df["책 제목"] = display_df["책 제목"].astype(str)
+        display_df["읽은 쪽수"] = display_df["읽은 쪽수"].astype(str)
         display_df["지은이"] = display_df["지은이"].astype(str)
         display_df["감상평"] = display_df["감상평"].astype(str)
         
@@ -81,9 +89,11 @@ if current_tab == "독서 기록장":
             display_df,
             column_config={
                 "reading_id": None, # Hidden ID
+                "번호": st.column_config.NumberColumn("번호", disabled=True, width="small"),
                 "읽은 날짜": st.column_config.DateColumn("읽은 날짜"),
                 "구분": st.column_config.SelectboxColumn("구분", options=["만화", "줄글만화", "줄글", "기타"]),
                 "책 제목": st.column_config.TextColumn("책 제목", required=True),
+                "읽은 쪽수": st.column_config.TextColumn("읽은 쪽수", width="small"),
                 "지은이": st.column_config.TextColumn("지은이"),
                 "감상평": st.column_config.TextColumn("감상평", required=True)
             },
@@ -120,8 +130,13 @@ if current_tab == "독서 기록장":
         
                 # 3. Process Editor Data
                 saved_df = edited_readings.copy()
+                
+                # Remove the 번호 column (display only, not stored)
+                if "번호" in saved_df.columns:
+                    saved_df = saved_df.drop(columns=["번호"])
+                
                 # Rename Back
-                saved_df.columns = ["reading_id", "read_date", "book_type", "book_title", "author", "one_line_review"]
+                saved_df.columns = ["reading_id", "read_date", "book_type", "book_title", "pages_read", "author", "one_line_review"]
                 saved_df["user_name"] = target_id
                 
                 # Fill Missing IDs for New Rows
@@ -148,9 +163,10 @@ if current_tab == "독서 기록하기":
         with col1:
             r_date = st.date_input("읽은 날짜", value=datetime.today())
             r_type = st.selectbox("책 구분", ["만화", "줄글만화", "줄글", "기타"])
-        with col2:
             r_title = st.text_input("책 제목", placeholder="예: 해리포터와 마법사의 돌")
+        with col2:
             r_author = st.text_input("지은이", placeholder="예: J.K. 롤링")
+            r_pages = st.text_input("읽은 쪽수", placeholder="예: 350 (선택사항)")
             
         r_review = st.text_input("감상평", placeholder="재미있었던 점이나 느낀 점을 짧게 적어보세요!")
         
@@ -169,7 +185,8 @@ if current_tab == "독서 기록하기":
                     r_title,
                     r_author,
                     r_review,
-                    target_id
+                    target_id,
+                    r_pages
                 )
                  return True
 

@@ -3,12 +3,16 @@ import pandas as pd
 from datetime import datetime
 import time
 from modules.db_manager import db_manager
+from modules.page_utils import initialize_page
 import modules.time_utils as time_utils
-
 import modules.auth_utils as auth_utils
 import modules.ui_components as ui_components
 
-st.set_page_config(page_title="오늘의 미션", page_icon="✅", layout="wide")
+# 미션 모듈
+from modules.mission import MissionGenerator, MissionManager, RewardHandler, ui_helpers
+
+# 페이지 초기화
+initialize_page("오늘의 미션", "✅")
 
 # Custom CSS for smaller button text
 st.markdown("""
@@ -22,18 +26,6 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
-# Initialize Authenticator
-authenticator = auth_utils.get_authenticator()
-
-# Check Login
-auth_status = auth_utils.check_login(authenticator)
-
-if auth_status:
-    ui_components.inject_mobile_css()
-    ui_components.render_sidebar(authenticator)
-else:
-    st.stop()
-
 # Resolve Target Child ID (Centralized)
 target_child_id = auth_utils.get_target_child_id()
 target_child_name = st.session_state.get("target_child_name", st.session_state.get("name", "User"))
@@ -41,85 +33,17 @@ user_role = st.session_state.get("role", "user")
 
 st.title("✅ 오늘의 미션")
 
-# --- Logic: Ensure Today's Missions (Auto-Gen) ---
-def ensure_todays_missions(target_child_id):
-    if "todays_missions_checked" not in st.session_state:
-        st.session_state["todays_missions_checked"] = {}
-    
-    today_str = time_utils.get_today_str()
-    check_key = f"{target_child_id}_{today_str}"
-    
-    if st.session_state["todays_missions_checked"].get(check_key):
-        return
+# 미션 인스턴스 생성
+mission_gen = MissionGenerator()
+mission_mgr = MissionManager()
+reward_handler = RewardHandler()
 
-    try:
-        defs_df = db_manager.get_mission_definitions(assignee=target_child_id)
-        if defs_df.empty: return
+# 상태 매핑
+status_map, status_map_inv = ui_helpers.get_status_maps()
+approval_map = ui_helpers.get_approval_request_maps()
 
-        missions_df = db_manager.get_missions(assignee=target_child_id)
-        existing_titles = []
-        if not missions_df.empty:
-            existing_today = missions_df[missions_df["date"] == today_str]
-            existing_titles = existing_today["title"].tolist()
-
-        import uuid
-        new_missions = []
-        today_date = time_utils.get_now()
-        weekday_map = ["월", "화", "수", "목", "금", "토", "일"]
-        today_weekday = weekday_map[today_date.weekday()]
-
-        for _, row in defs_df.iterrows():
-            if not row.get("active", True): continue # Respect active flag internally even if hidden
-            
-            title = row["title"]
-            def_type = row["type"]
-            freq = row["frequency"]
-            note = row.get("note", "")
-
-            should_create = False
-            if def_type == "Routine":
-                if today_weekday in str(freq):
-                    should_create = True
-            elif def_type == "OneTime":
-                if str(freq) == today_str:
-                    should_create = True
-            
-            
-            if should_create:
-                # Deduplication Check
-                # Check if title already exists in existing_titles
-                if title not in existing_titles:
-                    # Double Check: Ensure 'title' + 'date' + 'assignee' uniqueness against current DB session state if possible
-                    # But 'existing_titles' already comes from DB for today.
-                    new_missions.append({
-                        "mission_id": str(uuid.uuid4()),
-                        "date": today_str,
-                        "assignee": target_child_id,
-                        "title": title,
-                        "status": "Assigned", 
-                        "rejection_reason": note
-                    })
-                    # Add to existing_titles to prevent duplicates within the SAME loop (e.g. if definition has duplicates)
-                    existing_titles.append(title)
-        
-        if new_missions:
-            all_missions = db_manager.get_missions()
-            added_df = pd.DataFrame(new_missions)
-            if all_missions.empty:
-                final_df = added_df
-            else:
-                final_df = pd.concat([all_missions, added_df], ignore_index=True)
-            db_manager.update_data("Missions", final_df)
-            st.toast(f"📅 오늘의 미션 {len(new_missions)}개가 생성되었습니다!")
-            time.sleep(0.5)
-            st.rerun()
-
-        st.session_state["todays_missions_checked"][check_key] = True
-
-    except Exception as e:
-        print(f"Auto-gen error: {e}")
-
-ensure_todays_missions(target_child_id)
+# 자동 미션 생성
+mission_gen.ensure_todays_missions(target_child_id)
 
 # Fetch Data
 try:
@@ -290,24 +214,7 @@ if current_tab == "✅ 오늘의 미션":
                 
                 if st.button("💾 승인 처리 저장", type="primary", key="save_pending"):
                     def save_pending_action():
-                        all_raw = db_manager.get_missions(assignee=None) 
-                        changes = 0
-                        for r in edited_pending.to_dict('records'):
-                            mid = r['mission_id']
-                            kor_s = r['상태']
-                            reas = r['rejection_reason']
-                            eng_s = status_map_inv.get(kor_s, "Pending")
-                            
-                            idx = all_raw[all_raw['mission_id'] == mid].index
-                            if not idx.empty:
-                                if all_raw.loc[idx[0], 'status'] != eng_s or str(all_raw.loc[idx[0], 'rejection_reason']) != str(reas):
-                                    all_raw.loc[idx[0], 'status'] = eng_s
-                                    all_raw.loc[idx[0], 'rejection_reason'] = reas
-                                    changes += 1
-                        
-                        if changes > 0:
-                            return db_manager.update_data("Missions", all_raw)
-                        return False
+                        return mission_mgr.save_pending_changes(edited_pending, status_map_inv)
                     
                     ui_components.handle_submission(save_pending_action, success_msg="저장되었습니다!")
     else:
@@ -331,8 +238,14 @@ if current_tab == "✅ 오늘의 미션":
                      stamps = stamps[mask]
                 
                 s_opts = stamps['item_name'].tolist() if not stamps.empty else ["참 잘했어요"]
-                sel_stamp = st.selectbox("도장 종류", s_opts)
-                qty_stamp = st.number_input("도장 개수", min_value=1, value=1)
+                # 기본값: '참 잘했어요(S)' 찾기
+                default_stamp_idx = 0
+                for i, opt in enumerate(s_opts):
+                    if "참 잘했어요" in opt or "참잘했어요" in opt:
+                        default_stamp_idx = i
+                        break
+                sel_stamp = st.selectbox("도장 종류", s_opts, index=default_stamp_idx)
+                qty_stamp = st.number_input("도장 개수", min_value=0, value=1, help="0 입력 시 도장 없음")
             with col_r2:
                 coupons = settings_df[settings_df['category'] == 'Coupon'].copy()
                 if not coupons.empty and 'target_child' in coupons.columns:
@@ -341,15 +254,21 @@ if current_tab == "✅ 오늘의 미션":
                      coupons = coupons[mask]
                 
                 c_opts = coupons['item_name'].tolist() if not coupons.empty else ["보너스쿠폰"]
-                sel_coupon = st.selectbox("쿠폰 종류", c_opts)
-                qty_coupon = st.number_input("쿠폰 장수", min_value=0, value=1)
+                # 기본값: '게임쿠폰 20분' 찾기
+                default_coupon_idx = 0
+                for i, opt in enumerate(c_opts):
+                    if "게임쿠폰" in opt and "20" in opt:
+                        default_coupon_idx = i
+                        break
+                sel_coupon = st.selectbox("쿠폰 종류", c_opts, index=default_coupon_idx)
+                qty_coupon = st.number_input("쿠폰 장수", min_value=0, value=1, help="0 입력 시 쿠폰 없음")
             with col_r3:
                 st.write(""); st.write(""); st.write("")
                 if st.button("최종 승인 (보상 지급)", width="stretch"):
                     def final_approval_action():
-                        if qty_stamp > 0: db_manager.log_activity(target_child_name, "Mission", f"도장: {sel_stamp}", qty_stamp)
-                        if qty_coupon > 0: db_manager.log_activity(target_child_name, "Coupon", f"쿠폰: {sel_coupon}", qty_coupon)
-                        return True
+                        return reward_handler.grant_final_approval_rewards(
+                            target_child_name, sel_stamp, qty_stamp, sel_coupon, qty_coupon
+                        )
                     ui_components.handle_submission(final_approval_action, success_msg="보상이 지급되었습니다!")
 
 # --- TAB 2: Mission Integration Management ---
@@ -390,7 +309,7 @@ if current_tab == "🛠️ 미션 통합 관리":
     
     # Read-Only for Children
     edited_defs = st.data_editor(
-        combined_df,
+        combined_df.reset_index(drop=True),
         column_config={
             "def_id": None,
             "assignee": None,
@@ -516,7 +435,7 @@ if current_tab == "📜 이력 관리":
 
         if user_role == 'admin':
             edited_history = st.data_editor(
-                history_df[["mission_id", "date", "title", "상태", "rejection_reason"]],
+                history_df[["mission_id", "date", "title", "상태", "rejection_reason"]].reset_index(drop=True),
                 column_config={
                     "mission_id": None,
                     "date": st.column_config.TextColumn("날짜", disabled=True),
@@ -626,7 +545,7 @@ if current_tab == "📜 이력 관리":
             
             if user_role == 'admin':
                 edited_rewards = st.data_editor(
-                    view_df[["__id", "Timestamp", "Type", "Content", "Reward"]],
+                    view_df[["__id", "Timestamp", "Type", "Content", "Reward"]].reset_index(drop=True),
                     column_config={
                         "__id": None, # Hidden ID
                         "Timestamp": st.column_config.TextColumn("일시", disabled=True),

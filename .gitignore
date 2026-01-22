@@ -65,6 +65,9 @@ clean_duplicates.py
 !requirements.txt
 !runtime.txt
 
+# Documentation Exceptions
+!AI_WORK_GUIDELINES.md
+
 # OS
 .DS_Store
 .DS_Store?
@@ -83,10 +86,11 @@ Google sheets_API Key/
 !package.json
 
 # Documentation (임시)
-PRD.md
-TRD.md
-Tasks.md
-AI_WORK_GUIDELINES.md
-setup_guide.md
+# Documentation (임시) - Unblocked for translation
+# PRD.md
+# TRD.md
+# Tasks.md
+# AI_WORK_GUIDELINES.md
+# setup_guide.md
 250108_*.txt
 260108_*.txt

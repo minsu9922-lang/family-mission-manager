@@ -1,5 +1,6 @@
 import pandas as pd
 from datetime import datetime
+import modules.time_utils as time_utils
 from modules.db_manager import db_manager
 
 class LogicProcessor:
@@ -9,7 +10,7 @@ class LogicProcessor:
     # --- Mission Logic ---
     def get_todays_missions(self, user_name):
         df = self.db.get_missions()
-        today_str = datetime.now().strftime("%Y-%m-%d")
+        today_str = time_utils.get_today_str()
         return df[(df['assignee'] == user_name) & (df['date'] == today_str)]
 
     def update_mission_status(self, mission_id, new_status, reason=""):
