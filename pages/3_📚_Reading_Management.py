@@ -139,6 +139,11 @@ if current_tab == "독서 기록장":
                 saved_df.columns = ["reading_id", "read_date", "book_type", "book_title", "pages_read", "author", "one_line_review"]
                 saved_df["user_name"] = target_id
                 
+                # Convert read_date to string format YYYY-MM-DD to ensure consistency
+                # This handles both datetime objects from the editor and existing string dates
+                if not saved_df.empty and "read_date" in saved_df.columns:
+                    saved_df["read_date"] = pd.to_datetime(saved_df["read_date"], errors='coerce').dt.strftime("%Y-%m-%d")
+                
                 # Fill Missing IDs for New Rows
                 if not saved_df.empty:
                     def ensure_id(x):
