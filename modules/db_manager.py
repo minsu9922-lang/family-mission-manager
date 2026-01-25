@@ -123,13 +123,48 @@ class DataManager:
                 return pd.DataFrame()
         return pd.DataFrame()
 
+    def _preprocess_dates_for_save(self, df):
+        """
+        Convert date columns to YYYY-MM-DD string format before saving to Google Sheets.
+        This ensures consistent date format across all worksheets and prevents NaT issues.
+        
+        Args:
+            df: DataFrame to process
+            
+        Returns:
+            DataFrame with date columns formatted as YYYY-MM-DD strings
+        """
+        # Known date column names across all worksheets
+        date_columns = ['read_date', 'date', 'created_at', 'updated_at', 'completed_at']
+        
+        df_copy = df.copy()
+        
+        for col in date_columns:
+            if col in df_copy.columns:
+                try:
+                    # Convert to datetime first (handles various input formats)
+                    df_copy[col] = pd.to_datetime(df_copy[col], errors='coerce')
+                    # Convert to string in YYYY-MM-DD format
+                    # For NaT values, dt.strftime returns NaT which we handle below
+                    df_copy[col] = df_copy[col].apply(
+                        lambda x: x.strftime("%Y-%m-%d") if pd.notna(x) else ""
+                    )
+                except Exception as e:
+                    print(f"Warning: Failed to process date column {col}: {e}")
+                    # Keep original values if processing fails
+        
+        return df_copy
+
     def update_data(self, worksheet_name, df):
         def _update():
+            # Preprocess dates to ensure consistent format before saving
+            df_to_save = self._preprocess_dates_for_save(df)
+            
             if not self.use_fallback:
                 try:
                     if self.conn:
                         self.conn.clear(worksheet=worksheet_name) # Clear first to avoid zombies
-                        self.conn.update(worksheet=worksheet_name, data=df)
+                        self.conn.update(worksheet=worksheet_name, data=df_to_save)
                         st.cache_data.clear() # Clear ALL cache to ensure fresh data on next load
                         return True
                 except Exception as e:
@@ -151,7 +186,7 @@ class DataManager:
                         raise create_err
 
                 ws.clear()
-                update_values = [df.columns.values.tolist()] + df.astype(str).values.tolist()
+                update_values = [df_to_save.columns.values.tolist()] + df_to_save.astype(str).values.tolist()
                 ws.update(update_values)
                 st.cache_data.clear() # Clear cache on fallback update too
                 return True

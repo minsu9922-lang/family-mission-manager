@@ -74,13 +74,13 @@ if current_tab == "독서 기록장":
         display_df["감상평"] = display_df["감상평"].astype(str)
         
         # Ensure Date Column is datetime for Editor
-        # Force string conversion first to handle potential mixed types or objects
-        display_df["읽은 날짜"] = pd.to_datetime(display_df["읽은 날짜"].astype(str), errors='coerce')
+        display_df["읽은 날짜"] = pd.to_datetime(display_df["읽은 날짜"], errors='coerce')
         
-        # Recover NaT (invalid dates) with Today (Normalized to midnight for stability)
-        # CRITICAL: Must use normalize() to ensure the dataframe content doesn't change every microsecond,
-        # otherwise st.data_editor will reset and lose edits (deletions)!
-        display_df["읽은 날짜"] = display_df["읽은 날짜"].fillna(pd.Timestamp.now().normalize())
+        # Check for invalid dates and warn user instead of auto-filling with today
+        if display_df["읽은 날짜"].isna().any():
+            invalid_count = display_df["읽은 날짜"].isna().sum()
+            st.warning(f"⚠️ {invalid_count}개의 독서 기록에 잘못된 날짜가 있습니다. 날짜를 수정해주세요.")
+            # Keep NaT as is for user to fix, don't auto-fill with today's date
         
         display_df.reset_index(drop=True, inplace=True) # Reset index to handle deletion safely
 
@@ -140,9 +140,11 @@ if current_tab == "독서 기록장":
                 saved_df["user_name"] = target_id
                 
                 # Convert read_date to string format YYYY-MM-DD to ensure consistency
-                # This handles both datetime objects from the editor and existing string dates
+                # Note: db_manager also does this, but we do it here as a safety measure
                 if not saved_df.empty and "read_date" in saved_df.columns:
-                    saved_df["read_date"] = pd.to_datetime(saved_df["read_date"], errors='coerce').dt.strftime("%Y-%m-%d")
+                    saved_df["read_date"] = saved_df["read_date"].apply(
+                        lambda x: x.strftime("%Y-%m-%d") if pd.notna(x) else ""
+                    )
                 
                 # Fill Missing IDs for New Rows
                 if not saved_df.empty:
