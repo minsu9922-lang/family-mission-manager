@@ -73,23 +73,26 @@ if not df_settings.empty:
             stamp_price_map[name] = val # Overwrite if exists
         except: continue
 
-# Process Logs
+# Process Logs for 2-Phase Settlement System
+# Phase 1: Calculate Expected Allowance (stamps after last confirmation)
 unsettled_stamps = 0
-calculated_total_money = 0
+expected_allowance = 0
 # Initialize with columns to avoid KeyError if empty
-active_logs = pd.DataFrame(columns=["Type", "Content", "Reward", "Timestamp"])
+stamps_after_confirmed = pd.DataFrame(columns=["Type", "Content", "Reward", "Timestamp"])
 
 if not my_logs.empty:
-    # Filter logs for calculation: Only consider logs AFTER the last settlement
-    settlement_logs = my_logs[my_logs["Type"] == "Settlement"]
-    last_settlement_idx = -1
-    if not settlement_logs.empty:
-        last_settlement_idx = settlement_logs.index[-1]
+    # Filter logs for calculation: Only consider logs AFTER the last AllowanceConfirmed
+    # (also support legacy "Settlement" as confirmed for backward compatibility)
+    confirmed_logs = my_logs[my_logs["Type"].isin(["AllowanceConfirmed", "Settlement"])]
+    last_confirmed_idx = -1
+    if not confirmed_logs.empty:
+        last_confirmed_idx = confirmed_logs.index[-1]
     
-    active_logs = my_logs.loc[last_settlement_idx+1:]
+    stamps_after_confirmed = my_logs.loc[last_confirmed_idx+1:]
+    stamps_after_confirmed = stamps_after_confirmed[stamps_after_confirmed["Type"].isin(["Mission", "Praise"])]
     
-    # Calculate Stamps & Money from Active Logs
-    for _, row in active_logs.iterrows():
+    # Calculate Expected Allowance from stamps after confirmation
+    for _, row in stamps_after_confirmed.iterrows():
         r_type = row["Type"]
         r_content = row["Content"]
         try:
@@ -128,11 +131,23 @@ if not my_logs.empty:
             else:
                 price = stamp_price_map.get(str(r_content), 100)
             
-            # Check price for "참 잘했어요" manually if map fails?
-            # User said "Settings have 600".
-            
-            calculated_total_money += (r_reward * price)
+            expected_allowance += (r_reward * price)
             unsettled_stamps += r_reward
+
+# Phase 2: Calculate Unpaid Allowance (Confirmed - Paid)
+total_confirmed = 0
+total_paid = 0
+
+if not my_logs.empty:
+    # Sum all AllowanceConfirmed (and legacy Settlement as confirmed)
+    confirmed_amount = my_logs[my_logs["Type"].isin(["AllowanceConfirmed", "Settlement"])]["Reward"].sum()
+    total_confirmed = confirmed_amount if pd.notna(confirmed_amount) else 0
+    
+    # Sum all AllowancePaid
+    paid_amount = my_logs[my_logs["Type"] == "AllowancePaid"]["Reward"].sum()
+    total_paid = paid_amount if pd.notna(paid_amount) else 0
+
+unpaid_allowance = total_confirmed - total_paid
 
 # Calculate Available Coupons (획득 - 사용)
 # 쿠폰 로직: 개별 쿠폰 추적
@@ -170,18 +185,17 @@ for _, row in coupon_used_logs.iterrows():
 # 실제 보유 쿠폰 수
 total_coupons = len(available_coupon_items)
 
-# Final Results
-current_allowance = calculated_total_money
-all_stamp_count = unsettled_stamps
+# Note: expected_allowance and unsettled_stamps are already calculated above
+# No need to redefine current_allowance and all_stamp_count
 
 # UI Layout (Simple 3-column)
 col1, col2, col3 = st.columns(3)
 with col1:
     st.metric("보유 쿠폰", f"{total_coupons}장")
 with col2:
-    st.metric("받은 도장", f"{all_stamp_count}개")
+    st.metric("받은 도장", f"{unsettled_stamps}개")
 with col3:
-    st.metric("모은 용돈 (총합)", f"{current_allowance:,}원")
+    st.metric("예상 용돈", f"{expected_allowance:,}원")
 
 st.divider()
 
@@ -260,48 +274,91 @@ with c1:
 
 with c2:
     st.markdown("#### 💮 도장 상세")
-    # Use active_logs (filtered by settlement) for display
-    stamp_logs = active_logs[active_logs["Type"].isin(["Mission", "Praise"])]
-    if stamp_logs.empty:
+    # Use stamps_after_confirmed (filtered by last confirmation) for display
+    if stamps_after_confirmed.empty:
         st.info("받은 도장이 없습니다.")
     else:
-        st.dataframe(stamp_logs[["Timestamp", "Content", "Reward"]], hide_index=True, width="stretch")
+        st.dataframe(stamps_after_confirmed[["Timestamp", "Content", "Reward"]], hide_index=True, width="stretch")
 
 st.divider()
 
-# Settlement Section
+# 2-Phase Settlement Section
 st.subheader("🗓️ 월말 정산 (용돈 지급 관리)")
-st.write(f"지급해야 할 용돈 (미정산): **{int(current_allowance):,}원**")
-st.caption("※ 아이가 모은 도장 중 아직 정산되지 않은 금액입니다.")
 
-# Wrapper container for alignment
+# Phase 1: Expected Allowance & Confirm
+st.write(f"📊 예상 용돈: **{int(expected_allowance):,}원**")
+st.caption("※ 현재 모은 도장의 총 금액입니다.")
+
 if st.session_state.get("role") == "admin":
-    col_set, _ = st.columns([1, 4])
-    with col_set:
-        if st.button("정산 완료 (지급 확인)", width="stretch"):
-            if current_allowance > 0:
-                def settlement_action():
-                    # Add Settlement Log
-                    db_manager.log_activity(
-                        target_child_name, 
-                        "Settlement", 
-                        "용돈 정산 지급", 
-                        current_allowance # Log the amount paid
+    if expected_allowance > 0:
+        if st.button("용돈 확정", type="secondary", key="confirm_allowance_btn"):
+            def confirm_allowance_action():
+                db_manager.log_activity(
+                    target_child_name,
+                    "AllowanceConfirmed",
+                    "용돈 확정",
+                    expected_allowance
+                )
+                return True
+            
+            ui_components.handle_submission(
+                confirm_allowance_action,
+                success_msg=f"{int(expected_allowance):,}원이 확정되었습니다!"
+            )
+    else:
+        st.info("확정할 용돈이 없습니다.")
+
+st.divider()
+
+# Phase 2: Unpaid Allowance & Partial Payment
+st.write(f"💰 미정산 금액: **{int(unpaid_allowance):,}원**")
+st.caption("※ 확정된 용돈 중 아직 지급하지 않은 금액입니다.")
+
+if st.session_state.get("role") == "admin":
+    if unpaid_allowance > 0:
+        # 정산할 금액 입력
+        payment_amount = st.number_input(
+            "정산할 금액을 입력하세요 (원)",
+            min_value=0,
+            max_value=int(unpaid_allowance),
+            value=int(unpaid_allowance),
+            step=100,
+            key="payment_amount_input",
+            help="부분 정산 가능: 원하는 금액만 입력하여 나누어 정산할 수 있습니다."
+        )
+        
+        col_set, _ = st.columns([1, 4])
+        with col_set:
+            if st.button("정산 완료 (지급 확인)", type="primary", width="stretch"):
+                if payment_amount > 0:
+                    def pay_allowance_action():
+                        db_manager.log_activity(
+                            target_child_name,
+                            "AllowancePaid",
+                            "용돈 지급",
+                            payment_amount
+                        )
+                        return True
+                    
+                    remaining = unpaid_allowance - payment_amount
+                    if remaining > 0:
+                        success_msg = f"{int(payment_amount):,}원 정산 완료! (남은 미정산: {int(remaining):,}원)"
+                    else:
+                        success_msg = f"{int(payment_amount):,}원 정산 완료! (전체 정산 완료)"
+                    
+                    ui_components.handle_submission(
+                        pay_allowance_action,
+                        success_msg=success_msg
                     )
-                    return True
-                
-                ui_components.handle_submission(settlement_action, success_msg=f"{int(current_allowance):,}원 정산이 완료되었습니다!")
-            else:
-                st.warning("정산할 금액이 없습니다.")
+                else:
+                    st.warning("정산할 금액을 입력하세요.")
+    else:
+        st.info("정산할 금액이 없습니다.")
 else:
     st.info("부모님만 정산을 진행할 수 있습니다.")
-
-st.divider()
-
-# History
-# History
+# Settlement History
 st.subheader("📜 정산 이력 (장부)")
-settle_logs = my_logs[my_logs["Type"] == "Settlement"]
+settle_logs = my_logs[my_logs["Type"].isin(["AllowanceConfirmed", "AllowancePaid", "Settlement"])]
 
 if settle_logs.empty:
     st.info("아직 정산 이력이 없습니다.")
@@ -311,20 +368,31 @@ else:
     full_logs_raw = full_logs_raw.reset_index(drop=True)
     full_logs_raw['__id'] = full_logs_raw.index
     
-    # Filter for Current Child + Settlement Type
-    view_mask = (full_logs_raw['User'] == target_child_name) & (full_logs_raw['Type'] == "Settlement")
+    # Filter for Current Child + Settlement Types
+    view_mask = (full_logs_raw['User'] == target_child_name) & (full_logs_raw['Type'].isin(["AllowanceConfirmed", "AllowancePaid", "Settlement"]))
     view_df = full_logs_raw[view_mask].copy()
     
     user_role = st.session_state.get("role", "user")
     
+    # Add type description column
+    view_df_display = view_df.copy()
+    view_df_display["구분"] = view_df_display["Type"].map({
+        "AllowanceConfirmed": "용돈 확정",
+        "AllowancePaid": "용돈 지급",
+        "Settlement": "정산 (구버전)"
+    })
+    
     if user_role == 'admin':
         edited_settlements = st.data_editor(
-            view_df[["__id", "Timestamp", "Content", "Reward"]].reset_index(drop=True),
+            view_df_display[["__id", "Type", "User", "Timestamp", "구분", "Content", "Reward"]].reset_index(drop=True),
             column_config={
                 "__id": None,
+                "Type": None,  # Hidden but preserved
+                "User": None,  # Hidden but preserved
                 "Timestamp": st.column_config.TextColumn("일시", disabled=True),
+                "구분": st.column_config.TextColumn("구분", disabled=True),
                 "Content": st.column_config.TextColumn("내용"),
-                "Reward": st.column_config.NumberColumn("정산 금액")
+                "Reward": st.column_config.NumberColumn("금액")
             },
             width="stretch",
             hide_index=True,
@@ -338,8 +406,9 @@ else:
                 df_others = full_logs_raw[~view_mask]
                 df_updated_subset = edited_settlements.copy()
                 
-                # Clean ID
+                # Clean ID and display-only columns, but keep Type and User
                 if "__id" in df_updated_subset.columns: del df_updated_subset["__id"]
+                if "구분" in df_updated_subset.columns: del df_updated_subset["구분"]
                 if "__id" in df_others.columns: del df_others["__id"]
                 
                 final_logs = pd.concat([df_others, df_updated_subset], ignore_index=True)
@@ -353,11 +422,12 @@ else:
     else:
         # Read-Only View for Children
         st.dataframe(
-            view_df[["Timestamp", "Content", "Reward"]],
+            view_df_display[["Timestamp", "구분", "Content", "Reward"]],
             column_config={
                 "Timestamp": "일시",
+                "구분": "구분",
                 "Content": "내용",
-                "Reward": "정산 금액"
+                "Reward": "금액"
             },
             width="stretch",
             hide_index=True
@@ -386,3 +456,68 @@ else:
         width="stretch",
         hide_index=True
     )
+
+st.divider()
+
+# 도장 제출 이력
+st.subheader("💮 도장 제출 이력")
+
+# AllowanceConfirmed 로그 가져오기 (레거시 Settlement 포함)
+confirmed_logs = my_logs[my_logs["Type"].isin(["AllowanceConfirmed", "Settlement"])].copy()
+
+if confirmed_logs.empty:
+    st.info("아직 도장 제출 이력이 없습니다.")
+else:
+    # 각 확정 시점별로 그룹화
+    submission_records = []
+    
+    # 각 AllowanceConfirmed에 대해
+    for idx, confirmed_row in confirmed_logs.iterrows():
+        confirmed_time = confirmed_row["Timestamp"]
+        
+        # 이 확정 이전의 도장들을 찾기 (이전 확정 이후 ~ 현재 확정 이전)
+        # 이전 확정 찾기
+        previous_confirmed = confirmed_logs[confirmed_logs["Timestamp"] < confirmed_time]
+        if not previous_confirmed.empty:
+            last_confirmed_time = previous_confirmed["Timestamp"].max()
+            stamps_in_period = my_logs[
+                (my_logs["Type"].isin(["Mission", "Praise"])) &
+                (my_logs["Timestamp"] > last_confirmed_time) &
+                (my_logs["Timestamp"] <= confirmed_time)
+            ]
+        else:
+            # 첫 확정인 경우 - 처음부터 현재 확정까지
+            stamps_in_period = my_logs[
+                (my_logs["Type"].isin(["Mission", "Praise"])) &
+                (my_logs["Timestamp"] <= confirmed_time)
+            ]
+        
+        # 이 기간의 도장들을 그룹화
+        if not stamps_in_period.empty:
+            grouped = stamps_in_period.groupby("Content")["Reward"].sum().reset_index()
+            for _, row in grouped.iterrows():
+                submission_records.append({
+                    "제출 일시": confirmed_time,
+                    "내용": row["Content"],
+                    "도장 수": row["Reward"]
+                })
+    
+    if submission_records:
+        # DataFrame으로 변환
+        submission_df = pd.DataFrame(submission_records)
+        
+        # 제출 일시 기준 내림차순 정렬
+        submission_df = submission_df.sort_values(by="제출 일시", ascending=False)
+        
+        st.dataframe(
+            submission_df,
+            column_config={
+                "제출 일시": "제출 일시",
+                "내용": "내용",
+                "도장 수": "도장 수"
+            },
+            width="stretch",
+            hide_index=True
+        )
+    else:
+        st.info("아직 도장 제출 이력이 없습니다.")
