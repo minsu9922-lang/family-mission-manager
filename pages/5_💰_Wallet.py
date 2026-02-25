@@ -18,12 +18,26 @@ st.caption(f"**{target_child_name}**님의 자산 및 정산 현황입니다.")
 
 # 1. 최신 Reward 데이터 로드 (TTL=0으로 즉각 반영)
 try:
+    # [DEBUG] 데이터 로드 전 상태 기록
+    raw_reward_df = db_manager.get_data("Reward", ttl=0)
+    
+    with st.expander("🔍 데이터 연결 진단 (문제가 있을 때만 확인하세요)", expanded=False):
+        st.write(f"📂 시트 전체 데이터: {len(raw_reward_df)}행 발견")
+        st.write(f"👤 현재 접속 유저명: `{target_child_name}`")
+        if not raw_reward_df.empty:
+            # User 컬럼 찾기 (대소문자 무시)
+            user_col = next((c for c in raw_reward_df.columns if str(c).lower() == 'user'), None)
+            if user_col:
+                unique_users = raw_reward_df[user_col].unique()
+                st.write(f"📝 시트 내 유저들: {unique_users}")
+    
     reward_df = db_manager.get_rewards(user_name=target_child_name)
+    
     # status 컬럼이 없는 경우를 대비한 안전 장치 (하위 호환성)
     if not reward_df.empty and "status" not in reward_df.columns and "action" in reward_df.columns:
         reward_df = reward_df.rename(columns={"action": "status"})
 except Exception as e:
-    st.error(f"데이터 로드 실패: {e}")
+    st.error(f"데이터 로드 실패 (관리자에게 문의): {e}")
     reward_df = pd.DataFrame()
 
 # 2. 자산 계산 로직 (status 기반)
