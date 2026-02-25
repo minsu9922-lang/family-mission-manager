@@ -15,6 +15,10 @@ def get_auth_config():
         # Get user credentials from DB
         credentials = db_manager.get_user_dict()
         
+        # Ensure minimal structure for streamlit-authenticator v0.3.0+
+        if "usernames" not in credentials:
+            credentials = {"usernames": {}}
+            
         # Get cookie settings from secrets (not in DB for security)
         cookie_config = {
             "expiry_days": st.secrets.get("auth", {}).get("cookie_expiry_days", 30),
@@ -22,51 +26,60 @@ def get_auth_config():
             "name": st.secrets.get("auth", {}).get("cookie_name", "family_app_cookie")
         }
             
-        # Structure for authenticator
+        # Structure for authenticator (v0.3.0+ expects credentials, cookie, preauthorized)
         return {
             "credentials": credentials,
-            "cookie": cookie_config
+            "cookie": cookie_config,
+            "preauthorized": {"emails": []}
         }
     except Exception as e:
         st.error(f"Error loading auth config from DB: {e}")
-        # Fallback: try to read from secrets.toml
-        return st.secrets
+        # Fallback: try to read from secrets.toml or predefined
+        return {
+            "credentials": {"usernames": {}},
+            "cookie": {"expiry_days": 30, "key": "fallback", "name": "fallback"},
+            "preauthorized": {"emails": []}
+        }
 
 def get_authenticator():
     """
     Initializes and returns the authenticator object.
+    Updated for streamlit-authenticator 0.4.2+
     """
     config = get_auth_config()
     
     authenticator = stauth.Authenticate(
-        config['credentials'],
-        config['cookie']['name'],
-        config['cookie']['key'],
-        config['cookie']['expiry_days'],
+        credentials=config['credentials'],
+        cookie_name=config['cookie']['name'],
+        cookie_key=config['cookie']['key'],
+        cookie_expiry_days=config['cookie']['expiry_days'],
+        preauthorized=config.get('preauthorized', {'emails': []})
     )
     return authenticator
 
 def check_login(authenticator):
     """
     Checks current login status. 
+    Updated for streamlit-authenticator 0.4.2+
     """
     if st.session_state.get("authentication_status") is not True:
-        # Cleanup session
-        for k in ["role", "target_child_name", "selected_child"]:
-            if k in st.session_state: del st.session_state[k]
+        # Cleanup session on first load or failed status
+        if "authentication_status" not in st.session_state or st.session_state.get("authentication_status") is None:
+            for k in ["role", "target_child_name", "selected_child"]:
+                if k in st.session_state: del st.session_state[k]
         
         try:
-            authenticator.login(location="main")
+            # v0.4.x login() renders the widget in place
+            authenticator.login()
         except Exception as e:
-            st.error(f"Login Widget Error: {e}")
+            st.error(f"인증 위젯 오류: {e}")
             return None
 
         if st.session_state.get("authentication_status") is False:
             st.error("❌ 아이디 또는 비밀번호가 올바르지 않습니다.")
             
         if st.session_state.get("authentication_status") is True:
-             import time
-             time.sleep(0.5)
+             # Success! 
              st.rerun()
              
     return st.session_state.get("authentication_status")

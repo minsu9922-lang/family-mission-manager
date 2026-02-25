@@ -15,22 +15,26 @@ if not user_role and st.session_state.get("username") in ["dad", "mom"]:
     user_role = "admin"
 
 # Fetch Data (Only needed for Admins usually, but let's fetch safely)
-df_settings = pd.DataFrame() # Default
+from modules.data_utils import load_dataframe_safely
+
+df_settings = pd.DataFrame()
 if user_role == "admin":
     try:
         df_settings = db_manager.get_settings()
+        df_settings = load_dataframe_safely(
+            df_settings,
+            required_columns=["category", "item_name", "value", "unit", "target_child"],
+            default_values={"target_child": "All"},
+            empty_columns=["category", "item_name", "value", "unit", "target_child"]
+        )
+        
+        # Normalize category
+        if "category" in df_settings.columns:
+            df_settings["category"] = df_settings["category"].astype(str).str.strip()
+            
     except Exception as e:
         st.error(f"설정을 불러오는 중 오류가 발생했습니다: {e}")
-
-    if df_settings.empty:
         df_settings = pd.DataFrame(columns=["category", "item_name", "value", "unit", "target_child"])
-
-    # Ensure target_child column exists
-    if "target_child" not in df_settings.columns:
-        df_settings["target_child"] = "All"
-    # Normalize category
-    if "category" in df_settings.columns:
-        df_settings["category"] = df_settings["category"].astype(str).str.strip()
 
 
 # Define Tabs based on Role (Using st.radio for state persistence)

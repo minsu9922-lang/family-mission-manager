@@ -45,12 +45,44 @@ approval_map = ui_helpers.get_approval_request_maps()
 # 자동 미션 생성
 mission_gen.ensure_todays_missions(target_child_id)
 
+from modules.data_utils import load_dataframe_safely, safe_filter_dataframe
+
 # Fetch Data
 try:
+    # 1. Missions - DB Manager now returns safe DF
     missions_df = db_manager.get_missions(assignee=target_child_id)
+    
+    # 2. Settings - DB Manager now returns safe DF
     settings_df = db_manager.get_settings()
+    
+    # [STRICT DEFENSE] Ensure Settings always has required structure
+    required_settings_cols = ["category", "item_name", "value", "unit", "target_child"]
+    settings_df = load_dataframe_safely(
+        settings_df,
+        required_columns=required_settings_cols,
+        default_values={"target_child": "All", "category": ""},
+        empty_columns=required_settings_cols
+    )
+    
+    # In case load_dataframe_safely is bypassed or fails to add columns
+    for col in required_settings_cols:
+        if col not in settings_df.columns:
+            settings_df[col] = "" if col != "value" else 0
+    
+    # category 컬럼 정리 (값의 공백 제거)
+    settings_df["category"] = settings_df["category"].fillna("").astype(str).str.strip()
+        
 except Exception as e:
-    st.error(f"데이터 로드 중 오류 발생: {e}")
+    st.error(f"데이터 로드 중 오류가 발생했습니다: {e}")
+    missions_df = pd.DataFrame()
+    settings_df = pd.DataFrame()
+    
+    # In case load_dataframe_safely is bypassed or fails to add columns
+    required_settings_cols = ["category", "item_name", "value", "unit", "target_child"]
+    for col in required_settings_cols:
+        if col not in settings_df.columns:
+            settings_df[col] = "" if col != "value" else 0
+    
     st.stop()
 
 status_map = {"Assigned": "할 일", "Pending": "검사 대기", "Approved": "완료", "Rejected": "반려"}
@@ -226,50 +258,48 @@ if current_tab == "✅ 오늘의 미션":
     if user_role == 'admin':
         st.subheader("🏅 오늘의 미션 최종 승인 (일일 보상)")
         with st.container(border=True):
-            col_r1, col_r2, col_r3 = st.columns([1, 1, 1])
-            with col_r1:
-                stamps = settings_df[settings_df['category'] == 'Stamp'].copy()
-                # Robust filtering
-                if not stamps.empty and 'target_child' in stamps.columns:
-                     # Check if target_child is All or matches ID
-                     # Handle NaN as 'All'
-                     stamps['target_child'] = stamps['target_child'].fillna('All')
-                     mask = stamps['target_child'].isin(['All', target_child_id])
-                     stamps = stamps[mask]
+            st.info("💡 보상 지급 시 'Reward' 장부에 안전하게 기록되며, 버튼을 여러 번 눌러도 데이터가 유실되지 않습니다.")
+            col_r1, col_r2, col_r3 = st.columns([2, 2, 1])
+            try:
+                with col_r1:
+                    # [SAFE DEFENSE] 도장 종류 매핑
+                    stamps = safe_filter_dataframe(settings_df, 'category', 'Stamp')
+                    if not stamps.empty:
+                         stamps['target_child'] = stamps['target_child'].fillna('All')
+                         mask = stamps['target_child'].isin(['All', target_child_id])
+                         stamps = stamps[mask]
+                    
+                    s_opts = stamps['item_name'].tolist() if not stamps.empty else ["참 잘했어요(S)"]
+                    sel_stamp = st.selectbox("도장 크기 선택", s_opts, key="admin_sel_stamp")
+                    qty_stamp = st.number_input("도장 개수", min_value=0, max_value=10, value=1, key="admin_qty_stamp")
                 
-                s_opts = stamps['item_name'].tolist() if not stamps.empty else ["참 잘했어요"]
-                # 기본값: '참 잘했어요(S)' 찾기
-                default_stamp_idx = 0
-                for i, opt in enumerate(s_opts):
-                    if "참 잘했어요" in opt or "참잘했어요" in opt:
-                        default_stamp_idx = i
-                        break
-                sel_stamp = st.selectbox("도장 종류", s_opts, index=default_stamp_idx)
-                qty_stamp = st.number_input("도장 개수", min_value=0, value=1, help="0 입력 시 도장 없음")
-            with col_r2:
-                coupons = settings_df[settings_df['category'] == 'Coupon'].copy()
-                if not coupons.empty and 'target_child' in coupons.columns:
-                     coupons['target_child'] = coupons['target_child'].fillna('All')
-                     mask = coupons['target_child'].isin(['All', target_child_id])
-                     coupons = coupons[mask]
+                with col_r2:
+                    # [SAFE DEFENSE] 쿠폰 종류 매핑
+                    coupons = safe_filter_dataframe(settings_df, 'category', 'Coupon')
+                    if not coupons.empty:
+                         coupons['target_child'] = coupons['target_child'].fillna('All')
+                         mask = coupons['target_child'].isin(['All', target_child_id])
+                         coupons = coupons[mask]
+                    
+                    c_opts = coupons['item_name'].tolist() if not coupons.empty else ["게임쿠폰(20분)"]
+                    sel_coupon = st.selectbox("보너스 쿠폰 선택", c_opts, key="admin_sel_coupon")
+                    qty_coupon = st.number_input("쿠폰 장수", min_value=0, max_value=5, value=1, key="admin_qty_coupon")
                 
-                c_opts = coupons['item_name'].tolist() if not coupons.empty else ["보너스쿠폰"]
-                # 기본값: '게임쿠폰 20분' 찾기
-                default_coupon_idx = 0
-                for i, opt in enumerate(c_opts):
-                    if "게임쿠폰" in opt and "20" in opt:
-                        default_coupon_idx = i
-                        break
-                sel_coupon = st.selectbox("쿠폰 종류", c_opts, index=default_coupon_idx)
-                qty_coupon = st.number_input("쿠폰 장수", min_value=0, value=1, help="0 입력 시 쿠폰 없음")
-            with col_r3:
-                st.write(""); st.write(""); st.write("")
-                if st.button("최종 승인 (보상 지급)", width="stretch"):
-                    def final_approval_action():
-                        return reward_handler.grant_final_approval_rewards(
-                            target_child_name, sel_stamp, qty_stamp, sel_coupon, qty_coupon
-                        )
-                    ui_components.handle_submission(final_approval_action, success_msg="보상이 지급되었습니다!")
+                with col_r3:
+                    st.write("") # 간격 조정
+                    st.write("")
+                    if st.button("🧧 보상 지급 실행", type="primary", use_container_width=True):
+                        if qty_stamp == 0 and qty_coupon == 0:
+                            st.warning("지급할 보상 수량을 입력하세요.")
+                        else:
+                            def final_approval_action():
+                                # RewardHandler를 통해 정규화된 장부에 기록
+                                return reward_handler.grant_final_approval_rewards(
+                                    target_child_name, sel_stamp, qty_stamp, sel_coupon, qty_coupon
+                                )
+                            ui_components.handle_submission(final_approval_action, success_msg="축하합니다! 보상이 정상 지급되었습니다.")
+            except Exception as e:
+                st.error(f"보상 UI 렌더링 오류: {e}")
 
 # --- TAB 2: Mission Integration Management ---
 if current_tab == "🛠️ 미션 통합 관리":
@@ -509,7 +539,7 @@ if current_tab == "📜 이력 관리":
     
     if not logs_df.empty:
         # Filter for Mission(Stamp) and Coupon only
-        reward_mask = logs_df['Type'].isin(['Mission', 'Coupon'])
+        reward_mask = logs_df['type'].isin(['Mission', 'Coupon'])
         reward_logs = logs_df[reward_mask].copy()
         
         if not reward_logs.empty:
@@ -540,18 +570,18 @@ if current_tab == "📜 이력 관리":
             full_logs_raw['__id'] = full_logs_raw.index
             
             # Filter for View
-            view_mask = (full_logs_raw['User'] == target_child_name) & (full_logs_raw['Type'].isin(['Mission', 'Coupon']))
+            view_mask = (full_logs_raw['user'] == target_child_name) & (full_logs_raw['type'].isin(['Mission', 'Coupon']))
             view_df = full_logs_raw[view_mask].copy()
             
             if user_role == 'admin':
                 edited_rewards = st.data_editor(
-                    view_df[["__id", "Timestamp", "Type", "Content", "Reward"]].reset_index(drop=True),
+                    view_df[["__id", "timestamp", "type", "content", "reward"]].reset_index(drop=True),
                     column_config={
                         "__id": None, # Hidden ID
-                        "Timestamp": st.column_config.TextColumn("일시", disabled=True),
-                        "Type": st.column_config.SelectboxColumn("구분", options=["Mission", "Coupon"], disabled=True),
-                        "Content": st.column_config.TextColumn("내용"),
-                        "Reward": st.column_config.NumberColumn("지급 수량")
+                        "timestamp": st.column_config.TextColumn("일시", disabled=True),
+                        "type": st.column_config.SelectboxColumn("구분", options=["Mission", "Coupon"], disabled=True),
+                        "content": st.column_config.TextColumn("내용"),
+                        "reward": st.column_config.NumberColumn("지급 수량")
                     },
                     width="stretch",
                     hide_index=True,
@@ -566,14 +596,14 @@ if current_tab == "📜 이력 관리":
                         df_updated_subset = edited_rewards.copy()
                         
                         # CRITICAL: Restore User column (lost during data_editor)
-                        df_updated_subset['User'] = target_child_name
+                        df_updated_subset['user'] = target_child_name
                         
                         if "__id" in df_updated_subset.columns: del df_updated_subset["__id"]
                         if "__id" in df_others.columns: del df_others["__id"]
                             
                         final_logs = pd.concat([df_others, df_updated_subset], ignore_index=True)
                         
-                        try: final_logs = final_logs.sort_values(by="Timestamp", ascending=True)
+                        try: final_logs = final_logs.sort_values(by="timestamp", ascending=True)
                         except: pass
                         
                         return db_manager.update_logs(final_logs)
@@ -582,12 +612,12 @@ if current_tab == "📜 이력 관리":
             else:
                  # Read-only Logs
                 st.dataframe(
-                    view_df[["Timestamp", "Type", "Content", "Reward"]],
+                    view_df[["timestamp", "type", "content", "reward"]],
                     column_config={
-                        "Timestamp": "일시",
-                        "Type": "구분",
-                        "Content": "내용",
-                        "Reward": "수량"
+                        "timestamp": "일시",
+                        "type": "구분",
+                        "content": "내용",
+                        "reward": "수량"
                     },
                     width="stretch",
                     hide_index=True

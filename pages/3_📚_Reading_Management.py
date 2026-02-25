@@ -18,12 +18,18 @@ user_role = st.session_state.get("role", "user")
 st.title("📚 독서 관리 (Reading Log)")
 st.caption(f"**{target_child_name}**의 독서 기록입니다.")
 
-# Fetch Data
+from modules.data_utils import load_dataframe_safely
+
 try:
-    # Use centralized filtering
     df_reading = db_manager.get_reading_logs(user_id=target_id)
+    df_reading = load_dataframe_safely(
+        df_reading,
+        required_columns=["reading_id", "read_date", "book_type", "book_title", "pages_read", "author", "one_line_review", "user_name"],
+        empty_columns=["reading_id", "read_date", "book_type", "book_title", "pages_read", "author", "one_line_review", "user_name"]
+    )
 except Exception as e:
     st.error(f"데이터를 불러오는 중 오류가 발생했습니다: {e}")
+    df_reading = pd.DataFrame(columns=["reading_id", "read_date", "book_type", "book_title", "pages_read", "author", "one_line_review", "user_name"])
     st.stop()
 
 # Sorting

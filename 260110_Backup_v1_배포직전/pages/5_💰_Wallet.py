@@ -91,10 +91,13 @@ calculated_total_money = 0
 active_logs = pd.DataFrame(columns=["Type", "Content", "Reward", "Timestamp"])
 
 if not my_logs.empty:
-    # Filter logs for calculation: Only consider logs AFTER the last settlement
-    settlement_logs = my_logs[my_logs["Type"] == "Settlement"]
+    # [STRICT DEFENSE] Use safe_filter_dataframe to prevent KeyError
+    from modules.data_utils import safe_filter_dataframe
+    settlement_logs = safe_filter_dataframe(my_logs, "Type", "Settlement")
+    
     last_settlement_idx = -1
     if not settlement_logs.empty:
+        # Use simple tail(1) index to avoid issues
         last_settlement_idx = settlement_logs.index[-1]
     
     # Slice active logs
@@ -170,15 +173,14 @@ if not my_logs.empty:
             calculated_total_money += (r_reward * price)
             unsettled_stamps += r_reward
             
-    # Calculate Coupons (All Time? Or Active?)
-    # Existing code `for _, row in my_logs.iterrows():` implies All Time.
-    # Assuming "Usage" is not yet implemented or coupons just accumulate.
-    for _, row in my_logs.iterrows():
-         if row["Type"] == "Coupon":
-              try:
-                  val = int(float(str(row["Reward"]).replace(",", "")))
-                  total_coupons += val
-              except: pass
+    # Calculate Coupons
+    coupon_all_logs = safe_filter_dataframe(my_logs, "Type", "Coupon")
+    if not coupon_all_logs.empty:
+        for _, row in coupon_all_logs.iterrows():
+            try:
+                val = int(float(str(row.get("Reward", 0)).replace(",", "")))
+                total_coupons += val
+            except: pass
 
 # Final Results
 current_allowance = calculated_total_money
@@ -200,20 +202,23 @@ st.subheader("📊 자산 상세 현황")
 c1, c2 = st.columns(2)
 with c1:
     st.markdown("#### 🎫 쿠폰 상세")
-    coupon_logs = my_logs[my_logs["Type"] == "Coupon"]
-    if coupon_logs.empty:
+    coupon_view_logs = safe_filter_dataframe(my_logs, "Type", "Coupon")
+    if coupon_view_logs.empty:
         st.info("보유한 쿠폰이 없습니다.")
     else:
-        st.dataframe(coupon_logs[["Timestamp", "Content", "Reward"]], hide_index=True, width="stretch")
+        # Show required columns safely
+        display_cols = [c for c in ["Timestamp", "Content", "Reward"] if c in coupon_view_logs.columns]
+        st.dataframe(coupon_view_logs[display_cols], hide_index=True, width="stretch")
 
 with c2:
     st.markdown("#### 💮 도장 상세")
     # Use active_logs (filtered by settlement) for display
-    stamp_logs = active_logs[active_logs["Type"].isin(["Mission", "Praise"])]
+    stamp_logs = safe_filter_dataframe(active_logs, "Type", ["Mission", "Praise"])
     if stamp_logs.empty:
         st.info("받은 도장이 없습니다.")
     else:
-        st.dataframe(stamp_logs[["Timestamp", "Content", "Reward"]], hide_index=True, width="stretch")
+        display_cols = [c for c in ["Timestamp", "Content", "Reward"] if c in stamp_logs.columns]
+        st.dataframe(stamp_logs[display_cols], hide_index=True, width="stretch")
 
 st.divider()
 
@@ -247,11 +252,10 @@ else:
 st.divider()
 
 # History
-# History
 st.subheader("📜 정산 이력 (장부)")
-settle_logs = my_logs[my_logs["Type"] == "Settlement"]
+settle_logs_view = safe_filter_dataframe(my_logs, "Type", "Settlement")
 
-if settle_logs.empty:
+if settle_logs_view.empty:
     st.info("아직 정산 이력이 없습니다.")
 else:
     # Editorial Logic for Logs

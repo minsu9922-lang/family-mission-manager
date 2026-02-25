@@ -1,4 +1,5 @@
 import streamlit as st
+# Force Reload: v1.0.2 fixes Recursive KeyError in Todays_Mission
 import streamlit_authenticator as stauth
 import yaml
 from yaml.loader import SafeLoader
@@ -23,9 +24,16 @@ st.set_page_config(
 # Load secrets for authentication
 import modules.auth_utils as auth_utils
 import modules.ui_components as ui_components
+from modules.db_manager import db_manager
 
 # Initialize Authenticator
 authenticator = auth_utils.get_authenticator()
+
+# [SAFETY LOCK] Automated migration is temporarily disabled for data recovery.
+# Please follow the instructions in the chat to recover data and restore credentials.
+# if "migration_done" not in st.session_state:
+#     with st.status("🛠️ **시스템 데이터 구조 개편 (Reward 전면 적용)**", expanded=True) as status:
+#         ...
 
 # Check Login (Recovery & Widget)
 # Check Login (Recovery & Widget)
@@ -65,5 +73,29 @@ if auth_status:
 elif auth_status is None:
     st.warning("로그인이 필요합니다.")
 
-if not st.session_state["authentication_status"]:
+if st.session_state["authentication_status"] is False:
+    # Login Failed - Reset session pieces to prevent sticky failures
+    if "logout" not in st.session_state:
+        st.session_state["logout"] = True
+    
+    with st.expander("🚨 로그인 문제 해결 (Debug Info)", expanded=True):
+        st.error("아이디 또는 비밀번호가 올바르지 않습니다.")
+        
+        try:
+            # Force refresh user dict to ensure no stale cache
+            users_data = db_manager.get_user_dict()
+            usernames = users_data.get('usernames', {})
+            st.write(f"**시스템 상태:** 인증 엔진 정상 (계정 {len(usernames)}개 로드됨)")
+            
+            if "dad" in usernames:
+                st.info("💡 'dad' 계정이 시스템에 등록되어 있습니다. 대문자/소문자 구분을 확인해주세요.")
+            
+            if st.button("세션 강제 초기화 (로그인 에러 지속 시 클릭)"):
+                for key in list(st.session_state.keys()):
+                    del st.session_state[key]
+                st.rerun()
+                
+        except Exception as e:
+            st.error(f"디버그 정보 로드 실패: {e}")
+
     st.stop()

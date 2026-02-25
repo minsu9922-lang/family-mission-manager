@@ -251,14 +251,19 @@ def generate_html_timetable(schedules):
     
     return full_html, parse_errors
 
-# Fetch Data
+from modules.data_utils import load_dataframe_safely
+
+# Fetch schedule data
 try:
-    # Use centralized filtering
-    df_schedule = db_manager.get_weekly_schedule(assignee=target_child_id)
-        
+    schedules = db_manager.get_weekly_schedule()
+    schedules = load_dataframe_safely(
+        schedules,
+        required_columns=["schedule_id", "title", "days", "start_time", "end_time", "assignee"],
+        empty_columns=["schedule_id", "title", "days", "start_time", "end_time", "assignee"]
+    )
 except Exception as e:
     st.error(f"데이터 로드 실패: {e}")
-    df_schedule = pd.DataFrame()
+    schedules = pd.DataFrame(columns=["schedule_id", "title", "days", "start_time", "end_time", "assignee"])
 
 # Navigation (Radio for Persistence)
 # Replaced st.tabs with st.radio to prevent tab reset on save/rerun

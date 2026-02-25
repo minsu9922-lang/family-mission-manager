@@ -92,5 +92,41 @@ Google sheets_API Key/
 # Tasks.md
 # AI_WORK_GUIDELINES.md
 # setup_guide.md
-250108_*.txt
-260108_*.txt
+# 임시 복구 및 진단 스크립트 (Cleanup)
+auto_repair_toml.py
+check_live_auth.py
+check_old_sheets.py
+diagnose_data.py
+diagnose_sheet_perms.py
+drive_full_search.py
+emergency_deep_search.py
+emergency_logs_repair.py
+fetch_log_data.py
+final_force_write.py
+final_proof.py
+final_recovery_unified.py
+final_rescue.py
+find_original_data.py
+fix_header_standalone.py
+fix_logs_header.py
+fix_secrets_final.py
+fix_secrets_raw.py
+force_sheet_sync.py
+master_recovery_script.py
+master_wallet_reconstruct.py
+mega_rescue.py
+migrate_data.py
+migrate_reward_system.py
+perfect_wallet_recovery.py
+repair_wallet_data.py
+safe_migration.py
+search_all_sheets.py
+simple_write.py
+ultimate_sheet_sync.py
+update_user_passwords.py
+debug_settings.py
+test_stress_reward.py
+
+# 백업 폴더
+260110_Backup_v1_배포직전/
+data/backups/

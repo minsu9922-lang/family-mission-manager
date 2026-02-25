@@ -20,23 +20,43 @@ st.caption(f"**{target_child_name}**의 칭찬 공간입니다.")
 # Fetch Data
 try:
     df_praise = db_manager.get_praise_logs(user_id=target_id)
+    
+    if df_praise is not None:
+        df_praise = df_praise.copy()
+        df_praise.columns = [str(c).strip() for c in df_praise.columns]
+    else:
+        df_praise = pd.DataFrame()
+
+    if df_praise.empty:
+        df_praise = pd.DataFrame(columns=["praise_id", "date", "content", "status", "user_name"])
+        
+    # Ensure required columns
+    for col in ["praise_id", "date", "content", "status", "user_name"]:
+        if col not in df_praise.columns:
+            df_praise[col] = ""
+
 except Exception as e:
     st.error(f"데이터 로드 실패: {e}")
-    st.stop()
+    df_praise = pd.DataFrame(columns=["praise_id", "date", "content", "status", "user_name"])
 
 # --- Load Settings for Reward Options ---
+from modules.data_utils import load_dataframe_safely
+
 try:
     df_settings = db_manager.get_settings()
+    df_settings = load_dataframe_safely(
+        df_settings,
+        required_columns=["category", "item_name", "value", "unit", "target_child"],
+        default_values={"target_child": "All"}
+    )
+    
+    # Normalize category column
+    if "category" in df_settings.columns:
+        df_settings["category"] = df_settings["category"].astype(str).str.strip()
+    
     # Filter for Stamps only
     if not df_settings.empty and "category" in df_settings.columns:
         # Filter Logic: Category='Stamp' AND (target_child='All' OR target_child=target_id)
-        # Note: target_id comes from auth_utils, user_name comes from logs.
-        # But settings.target_child stores ID (e.g. 'son1') ideally.
-        # Let's verify 'All' handling.
-        # Ensure target_child column exists
-        if "target_child" not in df_settings.columns:
-             df_settings["target_child"] = "All"
-             
         mask = (df_settings["category"] == "Stamp") & \
                ((df_settings["target_child"].fillna("All") == "All") | (df_settings["target_child"] == target_id))
         
@@ -44,7 +64,8 @@ try:
         stamp_options = [s for s in stamp_options if str(s).strip() != ""]
     else:
         stamp_options = []
-except:
+except Exception as e:
+    st.error(f"설정 로드 실패: {e}")
     stamp_options = []
 
 # Sorting Logic & Migration
