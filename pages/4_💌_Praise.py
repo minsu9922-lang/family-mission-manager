@@ -268,8 +268,8 @@ if current_tab == "👑 칭찬 승인/확인":
     try:
         all_logs_raw = db_manager.get_logs(user_id=None)
         
-        # Filter for Current Child AND Type='Praise'
-        reward_mask = (all_logs_raw['User'] == target_child_name) & (all_logs_raw['Type'] == 'Praise')
+        # Filter for Current Child AND type='Praise'
+        reward_mask = (all_logs_raw['user'] == target_child_name) & (all_logs_raw['type'] == 'Praise')
         reward_logs_view = all_logs_raw[reward_mask].copy()
         
         if reward_logs_view.empty:
@@ -281,16 +281,16 @@ if current_tab == "👑 칭찬 승인/확인":
                 
                 all_logs_raw = all_logs_raw.reset_index(drop=True)
                 all_logs_raw['__id'] = all_logs_raw.index
-                reward_mask = (all_logs_raw['User'] == target_child_name) & (all_logs_raw['Type'] == 'Praise')
+                reward_mask = (all_logs_raw['user'] == target_child_name) & (all_logs_raw['type'] == 'Praise')
                 reward_logs_view = all_logs_raw[reward_mask].copy()
                 
                 edited_rewards = st.data_editor(
-                    reward_logs_view[["__id", "Timestamp", "Content", "Reward"]].reset_index(drop=True),
+                    reward_logs_view[["__id", "timestamp", "content", "reward"]].reset_index(drop=True),
                     column_config={
                         "__id": None,
-                        "Timestamp": st.column_config.TextColumn("일시", disabled=True),
-                        "Content": st.column_config.TextColumn("내용 (보상명)"),
-                        "Reward": st.column_config.NumberColumn("보상 (개수)")
+                        "timestamp": st.column_config.TextColumn("일시", disabled=True),
+                        "content": st.column_config.TextColumn("내용 (보상명)"),
+                        "reward": st.column_config.NumberColumn("보상 (개수)")
                     },
                     hide_index=True,
                     width="stretch",
@@ -316,8 +316,8 @@ if current_tab == "👑 칭찬 승인/확인":
                                     idx_map = all_logs_final.index[all_logs_final['__id'] == rid].tolist()
                                     if idx_map:
                                         real_idx = idx_map[0]
-                                        all_logs_final.at[real_idx, 'Content'] = row['Content']
-                                        all_logs_final.at[real_idx, 'Reward'] = row['Reward']
+                                        all_logs_final.at[real_idx, 'content'] = row['content']
+                                        all_logs_final.at[real_idx, 'reward'] = row['reward']
                         
                         if "__id" in all_logs_final.columns:
                             del all_logs_final["__id"]
@@ -328,11 +328,11 @@ if current_tab == "👑 칭찬 승인/확인":
             else:
                 # Child: Read-only view
                 st.dataframe(
-                    reward_logs_view[["Timestamp", "Content", "Reward"]],
+                    reward_logs_view[["timestamp", "content", "reward"]],
                     column_config={
-                        "Timestamp": "일시",
-                        "Content": "내용 (보상명)",
-                        "Reward": "보상 (개수)"
+                        "timestamp": "일시",
+                        "content": "내용 (보상명)",
+                        "reward": "보상 (개수)"
                     },
                     hide_index=True,
                     width="stretch"
