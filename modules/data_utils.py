@@ -115,13 +115,20 @@ def safe_filter_dataframe(df, column, value, fallback_empty=True):
     # 단일 컬럼 필터링 (가장 흔한 케이스)
     if isinstance(column, str):
         actual_col = final_cols[0]
+        # [UPGRADE] 문자열인 경우 값 비교 시에도 대소문자 무시
+        if isinstance(value, str):
+            return df[df[actual_col].astype(str).str.lower() == value.lower()].copy()
         return df[df[actual_col] == value].copy()
     
     # 멀티 컬럼 필터링
     mask = True
     for i, col_name in enumerate(final_cols):
         target_val = value[i] if isinstance(value, list) else value
-        mask &= (df[col_name] == target_val)
+        # [UPGRADE] 멀티 컬럼에서도 문자열은 소문자 비교
+        if isinstance(target_val, str):
+            mask &= (df[col_name].astype(str).str.lower() == target_val.lower())
+        else:
+            mask &= (df[col_name] == target_val)
     
     return df[mask].copy()
 
